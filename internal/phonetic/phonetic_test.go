@@ -2,23 +2,6 @@ package phonetic
 
 import "testing"
 
-func TestSoundex(t *testing.T) {
-	cases := map[string]string{
-		"Robert":   "R163",
-		"Rupert":   "R163",
-		"Rubin":    "R150",
-		"Ashcraft": "A261",
-		"Tymczak":  "T522",
-		"Pfister":  "P236",
-		"Honeyman": "H555",
-	}
-	for in, want := range cases {
-		if got := Soundex(in); got != want {
-			t.Errorf("Soundex(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 func TestSoundsAlike(t *testing.T) {
 	// Spelled differently, sound the same.
 	yes := [][2]string{
@@ -42,6 +25,20 @@ func TestSoundsAlike(t *testing.T) {
 		if SoundsAlike(p[0], p[1]) {
 			t.Errorf("SoundsAlike(%q,%q) = true, want false", p[0], p[1])
 		}
+	}
+}
+
+func TestSoundsSimilar(t *testing.T) {
+	// Same consonant skeleton, different vowel structure: similar but not
+	// near-identical.
+	if !SoundsSimilar("Blaze", "Belize") {
+		t.Error("Blaze/Belize should share a consonant skeleton")
+	}
+	if SoundsAlike("Blaze", "Belize") {
+		t.Error("Blaze/Belize differ in vowel structure; should not be near-identical")
+	}
+	if SoundsSimilar("GoldWing", "Sunfire") {
+		t.Error("GoldWing/Sunfire should not be similar")
 	}
 }
 
@@ -93,10 +90,7 @@ func TestSyllableCount(t *testing.T) {
 }
 
 func TestEmpty(t *testing.T) {
-	if Soundex("123") != "" {
-		t.Error("non-letter input should produce empty Soundex")
-	}
-	if SoundsAlike("", "") {
+	if SoundsAlike("", "") || SoundsSimilar("", "") {
 		t.Error("empty input should not sound alike")
 	}
 	if Rhyme("123") != "" || SyllableCount("") != 0 {

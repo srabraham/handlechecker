@@ -91,12 +91,17 @@ func TestRhyme(t *testing.T) {
 	}
 }
 
-func TestSyllableCadence(t *testing.T) {
-	if !hasKind(checkPair("Catherine", "Tangerine"), "syllable-count") {
-		t.Error("expected syllable-count note for two 3-syllable callsigns")
+func TestSyllableBounds(t *testing.T) {
+	if !hasKind(checkSingle("Gold"), "too-few-syllables") { // 1 syllable
+		t.Error("expected too-few-syllables for Gold")
 	}
-	if hasKind(checkPair("Gold", "Wing"), "syllable-count") {
-		t.Error("short callsigns should not trigger syllable-count note")
+	if !hasKind(checkSingle("Indivisibility"), "too-many-syllables") { // 7 syllables
+		t.Error("expected too-many-syllables for Indivisibility")
+	}
+	for _, ok := range []string{"GoldWing", "Tangerine", "Thunder"} { // 2–5 syllables
+		if hasKind(checkSingle(ok), "too-few-syllables") || hasKind(checkSingle(ok), "too-many-syllables") {
+			t.Errorf("%q should be within the 2–5 syllable range", ok)
+		}
 	}
 }
 

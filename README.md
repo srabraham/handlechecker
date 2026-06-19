@@ -14,6 +14,14 @@ go build -o handlecheckercli ./cmd/handlecheckercli
 ./handlecheckercli GoldWing GoldBar golffoxtrot Knight Nite Echo
 ```
 
+For the strongest sound-alike detection, run it in Docker — the image bundles
+`espeak-ng`, which enables phoneme-level comparison (see below):
+
+```sh
+docker build -t handlechecker .
+docker run --rm handlechecker GoldWing GoldBar golffoxtrot Knight Nite Echo
+```
+
 Example output:
 
 ```
@@ -32,16 +40,18 @@ Per callsign:
 - **NATO concatenation** — the name is just NATO phonetic words strung together
   (`golffoxtrot` = golf + foxtrot), or is itself a NATO word (`Echo`).
 - **Length** — too short to survive radio noise, or too long to say cleanly.
-
+- **Syllable count** — fewer than 2 or more than 5 syllables (aim for 2–5, so
+  the name is neither too curt nor too long-winded on the air).
 - **Confusable characters** — contains glyphs easily misread on a roster
   (`Sl0pe` — the `0` reads as `O`).
 
 Per pair:
 - **Duplicate** — identical once case/punctuation/spacing are ignored.
-- **Sound-alike** — matching **Double Metaphone** code (e.g. `Knight` / `Nite`,
-  `Phipps` / `Fips`), or same Soundex code. This is the headline radio concern:
-  different spelling, same sound. Double Metaphone cross-matches primary and
-  secondary pronunciations, so it handles names with multiple valid readings.
+- **Sound-alike** — the headline radio concern: different spelling, same sound.
+  Two tiers, HIGH (near-identical) and MEDIUM (similar). When `espeak-ng` is
+  available this uses a phoneme-level distance that accounts for vowel quality
+  (`Knight`/`Nite` = HIGH, `Gold`/`Gild` = MEDIUM); otherwise it falls back to
+  Metaphone 3 key matching.
 - **Rhyme** — share the same final vowel sound (`Sting` / `GoldWing` → "ing").
 - **Edit distance** — differ by only one or two letters (`Spark` / `Sparc`).
 - **Look-alike (written roster)** — identical once confusable characters are
@@ -50,7 +60,6 @@ Per pair:
   (`GoldWing` / `GoldBar` both contain "Gold").
 - **Common prefix / suffix** — share an opening or closing run of letters.
 - **Substring** — one callsign is wholly contained in the other.
-- **Cadence** — same syllable count for longer callsigns (INFO level).
 
 ## Flags
 
@@ -65,22 +74,36 @@ script or CI check.
 
 ## How "sounds alike" works
 
-The phonetics live in `internal/phonetic`:
-- **Double Metaphone** (the primary engine) models English pronunciation and
-  emits two codes per word, so `Knight`, `Nite`, and `Night` collapse together
-  and alternate pronunciations cross-match.
-- **Soundex** is a coarser fallback for looser similarities.
-- **Rhyme** compares the final vowel sound; **SyllableCount** estimates cadence.
+The phonetics live in `internal/phonetic`, with two engines:
 
-These run alongside Levenshtein edit distance, word-token analysis, and a
-homoglyph fold (for written rosters) so that look-alike and sound-alike problems
-are both surfaced.
+1. **Phoneme distance (preferred, needs `espeak-ng`).** `espeak-ng` converts
+   each callsign — including invented words — to a phoneme sequence, which is
+   compared with a feature-weighted edit distance: substituting two similar
+   sounds (e.g. /b/↔/p/, or `Gold`↔`Cold`) costs little, while different sounds
+   (and different *vowels*) cost more. This is the only tier that models vowel
+   quality, so `Gold`/`Gild` come out as merely *similar* rather than identical.
+   Thresholds were tuned against a battery of real pronunciations.
+2. **Metaphone 3 (fallback, pure Go).** When `espeak-ng` isn't installed, the
+   tool uses Metaphone 3 key matching, run with and without vowel positions to
+   grade near-identical vs. consonant-only matches. Note the whole Metaphone
+   family collapses all vowels to one value, so it captures vowel *position* but
+   not vowel *identity* (`Gold` and `Gild` match) — which is exactly why the
+   phoneme tier is preferred when available.
+
+**Rhyme** compares the final vowel sound and **SyllableCount** estimates
+cadence; these run alongside Levenshtein edit distance, word-token analysis, and
+a homoglyph fold (for written rosters).
 
 ## Dependencies
 
-Go 1.26+, and a single external module:
-[`github.com/antzucaro/matchr`](https://github.com/antzucaro/matchr) for its
-well-tested Double Metaphone implementation. Everything else (Soundex, rhyme,
-syllable counting, homoglyph folding, edit distance, NATO decomposition) is
-pure standard library.
+- **Go 1.26+** and one Go module:
+  [`github.com/dlclark/metaphone3`](https://github.com/dlclark/metaphone3) — a
+  BSD-3 licensed port of Lawrence Philips' Metaphone 3 (v2.1.3, released under
+  BSD-3 via OpenRefine).
+- **`espeak-ng`** — *optional* runtime dependency. If present on `PATH` it
+  enables the phoneme-level sound check; if absent, the tool degrades gracefully
+  to the Metaphone 3 fallback. The provided Docker image bundles it.
+
+Everything else (rhyme, syllable counting, homoglyph folding, edit distance,
+phoneme feature distance, NATO decomposition) is pure standard library.
 ```

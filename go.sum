@@ -1,2 +1,2 @@
-github.com/antzucaro/matchr v0.0.0-20221106193745-7bed6ef61ef9 h1:bdN23nM++VfIw4oCAxyEmUdfwKgMFcHMVu4a7T6CNOQ=
-github.com/antzucaro/matchr v0.0.0-20221106193745-7bed6ef61ef9/go.mod h1:v3ZDlfVAL1OrkKHbGSFFK60k0/7hruHPDq2XMs9Gu6U=
+github.com/dlclark/metaphone3 v0.0.0-20190903202417-5fe87fcdd547 h1:OORe7CarEOHLaNLEGqaCthCiNCkdE1ONQq8bykPwWmc=
+github.com/dlclark/metaphone3 v0.0.0-20190903202417-5fe87fcdd547/go.mod h1:qDxEB58K1Kb5fD+Rk8joPpQTiGWobSxPFCyc79M2a1o=

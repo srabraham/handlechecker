@@ -121,6 +121,21 @@ func checkSingle(c string) []Issue {
 		})
 	}
 
+	// Syllable count: aim for 2–5 so the callsign is neither too curt nor too
+	// long-winded on the air.
+	switch syl := phonetic.SyllableCount(c); {
+	case syl < 2:
+		issues = append(issues, Issue{
+			A: c, Severity: SevMedium, Kind: "too-few-syllables",
+			Detail: fmt.Sprintf("has only %d syllable; aim for 2–5 so it isn't too short on the air", syl),
+		})
+	case syl > 5:
+		issues = append(issues, Issue{
+			A: c, Severity: SevLow, Kind: "too-many-syllables",
+			Detail: fmt.Sprintf("has %d syllables; aim for 2–5 so it isn't too long-winded on the air", syl),
+		})
+	}
+
 	if hasConfusableChars(c) {
 		issues = append(issues, Issue{
 			A: c, Severity: SevLow, Kind: "confusable-chars",
@@ -130,6 +145,15 @@ func checkSingle(c string) []Issue {
 
 	return issues
 }
+
+// Phoneme-distance thresholds (from espeak-ng), tuned against a battery of
+// real pronunciations: at or below High the words sound nearly identical
+// (e.g. Gold/Cold = 0.02), at or below Med they sound similar (e.g. Gold/Gild
+// = 0.13, Blaze/Belize = 0.23).
+const (
+	phonemeHighMax = 0.06
+	phonemeMedMax  = 0.24
+)
 
 // --- pairwise checks ---------------------------------------------------------
 
@@ -184,39 +208,54 @@ func checkPair(a, b string) []Issue {
 		add(SevMedium, "common-prefix",
 			fmt.Sprintf("start with the same %d letters (%q); they sound alike on first syllable", pre, na[:pre]))
 	}
-	// Phonetic: the most important radio concern — sounding the same. Double
-	// Metaphone cross-matches primary/secondary pronunciations.
-	soundAlike := phonetic.SoundsAlike(a, b)
-	switch {
-	case soundAlike:
-		add(SevHigh, "sound-alike", "sound nearly identical (matching Double Metaphone code)")
-	case phonetic.Soundex(a) == phonetic.Soundex(b):
-		add(SevMedium, "sound-similar", "have the same Soundex code; likely confusable by ear")
-	case phonetic.SoundsLikeStartOf(a, b):
-		add(SevLow, "sound-prefix", "one sounds like the start of the other")
+	// Phonetic: the most important radio concern — sounding the same. When
+	// espeak-ng is installed we compare actual pronunciations (vowel quality and
+	// all) via a feature-weighted phoneme distance; otherwise we fall back to
+	// Metaphone 3 cross-matching.
+	strongSound := false
+	if d, ok := phonetic.PhoneticDistance(a, b); ok {
+		switch {
+		case d <= phonemeHighMax:
+			add(SevHigh, "sound-alike", fmt.Sprintf("sound nearly identical (phoneme distance %.2f via espeak-ng)", d))
+			strongSound = true
+		case d <= phonemeMedMax:
+			add(SevMedium, "sound-similar", fmt.Sprintf("sound similar (phoneme distance %.2f via espeak-ng)", d))
+			strongSound = true
+		}
+	} else {
+		switch {
+		case phonetic.SoundsAlike(a, b):
+			add(SevHigh, "sound-alike", "sound nearly identical (matching Metaphone 3 key, vowels included)")
+			strongSound = true
+		case phonetic.SoundsSimilar(a, b):
+			add(SevMedium, "sound-similar", "share the same consonant sounds; likely confusable by ear")
+			strongSound = true
+		case phonetic.SoundsLikeStartOf(a, b):
+			add(SevLow, "sound-prefix", "one sounds like the start of the other")
+		}
 	}
 
 	// Rhyme: same final vowel sound. Takes precedence over a raw common suffix,
 	// which is usually just describing the same rhyme.
 	ra, rb := phonetic.Rhyme(a), phonetic.Rhyme(b)
-	rhyme := !soundAlike && ra != "" && ra == rb && len(ra) >= 2
+	rhyme := !strongSound && ra != "" && ra == rb && len(ra) >= 2
 	if rhyme {
 		add(SevLow, "rhyme", fmt.Sprintf("rhyme (both end with the %q sound)", ra))
 	}
 
 	// Shared trailing letters, when not already explained by a shared word or
 	// by a reported rhyme.
-	if suf := commonSuffixLen(na, nb); suf >= 3 && !rhyme && !explainsAffix(shared, na[len(na)-suf:]) {
+	if suf := commonSuffixLen(na, nb); suf >= 3 && !rhyme && !strongSound && !explainsAffix(shared, na[len(na)-suf:]) {
 		add(SevLow, "common-suffix",
 			fmt.Sprintf("end with the same %d letters (%q)", suf, na[len(na)-suf:]))
 	}
 
-	// Cadence: same number of syllables. Only noted for longer callsigns, where
-	// matching rhythm is more distinctive (and short matches are too common).
-	if sa, sb := phonetic.SyllableCount(a), phonetic.SyllableCount(b); sa == sb && sa >= 3 {
-		add(SevInfo, "syllable-count",
-			fmt.Sprintf("have the same syllable count (%d), giving a similar cadence on the air", sa))
-	}
+	// Cadence: same number of syllables. Disabled for now (kept for later
+	// consideration) — was too noisy as an INFO-level signal.
+	// if sa, sb := phonetic.SyllableCount(a), phonetic.SyllableCount(b); sa == sb && sa >= 3 {
+	// 	add(SevInfo, "syllable-count",
+	// 		fmt.Sprintf("have the same syllable count (%d), giving a similar cadence on the air", sa))
+	// }
 
 	return issues
 }
