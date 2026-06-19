@@ -34,6 +34,18 @@ func espeakBin() string {
 // phoneme-level comparison.
 func PhonemesAvailable() bool { return espeakBin() != "" }
 
+// Phonemes returns the espeak-ng phoneme tokens for word (e.g. "goldwing" ->
+// ["g","oU","l","d","w","I","N"]), the same sequence used by PhoneticDistance.
+// ok is false when espeak-ng is unavailable or the word cannot be phonemized.
+// Exposed for debug output.
+func Phonemes(word string) (toks []string, ok bool) {
+	t, err := phonemize(word)
+	if err != nil || len(t) == 0 {
+		return nil, false
+	}
+	return t, true
+}
+
 var (
 	phonemeCacheMu sync.Mutex
 	phonemeCache   = map[string][]string{}
@@ -75,12 +87,14 @@ func parsePhonemes(s string) []string {
 	for _, f := range fields {
 		f = strings.Map(func(r rune) rune {
 			switch r {
-			case '\'', '’', ',', '%', '!', '-':
+			case '\'', '’', ',', '%', '!', '-', ';':
 				return -1
 			}
 			return r
 		}, f)
-		if f != "" {
+		// Drop a stray standalone length mark (":"); the real long vowels carry
+		// it as part of a whole token like "i:" and are unaffected.
+		if f != "" && f != ":" {
 			toks = append(toks, f)
 		}
 	}
@@ -162,13 +176,13 @@ func featureDistance(x, y string) float64 {
 }
 
 // lookupFeatures resolves a phoneme token to its feature vector, falling back to
-// the base token when espeak appends a digit variant (e.g. "I2" -> "I",
-// "aI3" -> "aI").
+// the base token when espeak appends a variant marker — a digit or a '#' (e.g.
+// "I2" -> "I", "aI3" -> "aI", "I#" -> "I", "t#" -> "t").
 func lookupFeatures(tok string) (artic, bool) {
 	if f, ok := phonemeFeatures[tok]; ok {
 		return f, true
 	}
-	if base := strings.TrimRight(tok, "0123456789"); base != tok && base != "" {
+	if base := strings.TrimRight(tok, "0123456789#"); base != tok && base != "" {
 		if f, ok := phonemeFeatures[base]; ok {
 			return f, true
 		}

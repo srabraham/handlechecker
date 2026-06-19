@@ -28,6 +28,7 @@ func run() int {
 		minSev  = flag.String("min", "info", "minimum severity to report: info|low|medium|high|critical")
 		failOn  = flag.String("fail-on", "high", "exit non-zero if any issue at this severity or above is found (or 'never')")
 		noColor = flag.Bool("no-color", false, "disable colored output")
+		debug   = flag.Bool("debug", false, "print the phonemes used for each callsign (to stderr)")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [flags] CALLSIGN [CALLSIGN ...]\n\n", os.Args[0])
@@ -58,6 +59,10 @@ func run() int {
 
 	color := !*noColor && isTerminal(os.Stdout)
 
+	if *debug {
+		printPhonemeDebug(callsigns)
+	}
+
 	issues := checker.Analyze(callsigns)
 
 	shown := 0
@@ -85,6 +90,30 @@ func run() int {
 		return 1
 	}
 	return 0
+}
+
+// printPhonemeDebug writes each callsign's phoneme breakdown to stderr, so it
+// stays out of the (potentially parsed) findings on stdout.
+func printPhonemeDebug(callsigns []string) {
+	if !checker.PhonemesAvailable() {
+		fmt.Fprintln(os.Stderr,
+			"debug: espeak-ng not installed; sound checks use the Metaphone 3 fallback (no phonemes to show)")
+		fmt.Fprintln(os.Stderr)
+		return
+	}
+	fmt.Fprintln(os.Stderr, "debug: phonemes via espeak-ng (digits read as words):")
+	for _, d := range checker.DebugPhonemes(callsigns) {
+		name := d.Callsign
+		if d.Spoken != d.Callsign {
+			name = fmt.Sprintf("%s → %s", d.Callsign, d.Spoken)
+		}
+		phon := strings.Join(d.Phonemes, " ")
+		if phon == "" {
+			phon = "(no phonemes)"
+		}
+		fmt.Fprintf(os.Stderr, "  %-24s %s\n", name, phon)
+	}
+	fmt.Fprintln(os.Stderr)
 }
 
 func printIssue(is checker.Issue, color bool) {

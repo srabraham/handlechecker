@@ -52,6 +52,8 @@ var phonemeFeatures = map[string]artic{
 	// --- affricates ---
 	"tS": {cor: true, strid: true, high: true},
 	"dZ": {cor: true, strid: true, high: true, voi: true},
+	// --- glottal stop (e.g. "uh-oh") ---
+	"?": {},
 	// --- fricatives ---
 	"f": {cont: true, lab: true, strid: true},
 	"v": {cont: true, lab: true, strid: true, voi: true},
@@ -62,19 +64,24 @@ var phonemeFeatures = map[string]artic{
 	"S": {cont: true, cor: true, strid: true, high: true},
 	"Z": {cont: true, cor: true, strid: true, high: true, voi: true},
 	"h": {cont: true},
+	"C": {cont: true, dor: true, high: true}, // voiceless palatal fricative ("huge")
+	"x": {cont: true, dor: true},             // voiceless velar fricative ("loch", "Bach")
 	// --- nasals ---
 	"m": {son: true, voi: true, nas: true, lab: true},
 	"n": {son: true, voi: true, nas: true, cor: true},
 	"N": {son: true, voi: true, nas: true, dor: true},
 	// --- approximants ---
-	"l": {son: true, voi: true, cont: true, cor: true, lat: true},
-	"r": {son: true, voi: true, cont: true, cor: true},
+	"l":  {son: true, voi: true, cont: true, cor: true, lat: true},
+	"@L": {syl: true, son: true, voi: true, cont: true, cor: true, lat: true}, // syllabic l ("bottle")
+	"r":  {son: true, voi: true, cont: true, cor: true},
 	"w": {son: true, voi: true, cont: true, lab: true, dor: true, high: true, back: true, round: true},
 	"j": {son: true, voi: true, cont: true, dor: true, high: true},
 
 	// --- monophthong vowels ---
 	"i:": {syl: true, son: true, voi: true, cont: true, high: true, tense: true},
+	"i":  {syl: true, son: true, voi: true, cont: true, high: true, tense: true}, // unstressed "happy" vowel
 	"I":  {syl: true, son: true, voi: true, cont: true, high: true},
+	"O":  {syl: true, son: true, voi: true, cont: true, low: true, back: true, round: true}, // open-o (ɔ)
 	"e":  {syl: true, son: true, voi: true, cont: true},
 	"E":  {syl: true, son: true, voi: true, cont: true},
 	"a":  {syl: true, son: true, voi: true, cont: true, low: true},
@@ -87,6 +94,7 @@ var phonemeFeatures = map[string]artic{
 	"O:": {syl: true, son: true, voi: true, cont: true, low: true, back: true, round: true, tense: true},
 	"U":  {syl: true, son: true, voi: true, cont: true, high: true, back: true, round: true},
 	"u:": {syl: true, son: true, voi: true, cont: true, high: true, back: true, round: true, tense: true},
+	"u":  {syl: true, son: true, voi: true, cont: true, high: true, back: true, round: true}, // lax/unstressed u
 	"3":  {syl: true, son: true, voi: true, cont: true},
 	"3:": {syl: true, son: true, voi: true, cont: true, tense: true},
 	"@":  {syl: true, son: true, voi: true, cont: true},
@@ -105,5 +113,11 @@ var phonemeFeatures = map[string]artic{
 	"i@3": {syl: true, son: true, voi: true, cont: true, high: true},
 	"U@":  {syl: true, son: true, voi: true, cont: true, high: true, back: true, round: true},
 	"A@":  {syl: true, son: true, voi: true, cont: true, low: true, back: true},
+	"O@":  {syl: true, son: true, voi: true, cont: true, low: true, back: true, round: true},
+	"o@":  {syl: true, son: true, voi: true, cont: true, back: true, round: true}, // NORTH/FORCE vowel ("door")
+
+	// --- nasalized vowels (loanwords, e.g. "genre", "bon") ---
+	"A~": {syl: true, son: true, voi: true, cont: true, nas: true, low: true, back: true, tense: true},
+	"O~": {syl: true, son: true, voi: true, cont: true, nas: true, low: true, back: true, round: true, tense: true},
 	"aI@": {syl: true, son: true, voi: true, cont: true, low: true, tense: true},
 }

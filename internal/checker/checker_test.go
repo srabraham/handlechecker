@@ -143,6 +143,33 @@ func TestLevenshtein(t *testing.T) {
 	}
 }
 
+func TestExpandDigits(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"Dog4", "DogFour"},
+		{"GoldWing-2Bar", "GoldWing-TwoBar"},
+		{"K9", "KNine"},
+		{"Echo", "Echo"},
+		{"42", "FourTwo"},
+	}
+	for _, c := range cases {
+		if got := expandDigits(c.in); got != c.want {
+			t.Errorf("expandDigits(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestDigitReadAsWord(t *testing.T) {
+	// "Dog4" is spoken "Dog Four", so it collides with "DogFour".
+	issues := checkPair("Dog4", "DogFour")
+	if len(issues) != 1 || issues[0].Kind != "duplicate" {
+		t.Errorf("expected Dog4/DogFour to be a duplicate, got %+v", issues)
+	}
+	// The shared spoken word "four" is found across the digit boundary.
+	if !hasKind(checkPair("Dog4", "Cat4"), "shared-word") {
+		t.Errorf("expected shared-word (four) for Dog4/Cat4, got %+v", checkPair("Dog4", "Cat4"))
+	}
+}
+
 func TestTokens(t *testing.T) {
 	got := tokens("GoldWing-2Bar")
 	want := []string{"gold", "wing", "bar"}

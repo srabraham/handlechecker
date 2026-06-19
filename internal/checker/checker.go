@@ -78,7 +78,10 @@ func Analyze(callsigns []string) []Issue {
 
 func checkSingle(c string) []Issue {
 	var issues []Issue
-	norm := normalize(c)
+	// Analyze the callsign as it is spoken, with digits read as words ("K9" ->
+	// "KNine"). The written-roster checks below still use the raw form c.
+	spoken := expandDigits(c)
+	norm := normalize(spoken)
 
 	if norm == "" {
 		issues = append(issues, Issue{
@@ -123,7 +126,7 @@ func checkSingle(c string) []Issue {
 
 	// Syllable count: aim for 2–5 so the callsign is neither too curt nor too
 	// long-winded on the air.
-	switch syl := phonetic.SyllableCount(c); {
+	switch syl := phonetic.SyllableCount(spoken); {
 	case syl < 2:
 		issues = append(issues, Issue{
 			A: c, Severity: SevMedium, Kind: "too-few-syllables",
@@ -155,11 +158,24 @@ const (
 	phonemeMedMax  = 0.24
 )
 
+// A shared run of sounds (local alignment) is flagged when it spans at least
+// this many syllables and matches at least this cleanly (normalized distance
+// within the run). This catches pairs whose global distance looks safe only
+// because they differ at the edges, e.g. "DustyDog" / "ADustyLog".
+const (
+	overlapMinSyllables = 2
+	overlapMaxDist      = 0.12
+)
+
 // --- pairwise checks ---------------------------------------------------------
 
 func checkPair(a, b string) []Issue {
 	var issues []Issue
-	na, nb := normalize(a), normalize(b)
+	// Compare the callsigns as spoken, with digits read as words ("Dog4" ->
+	// "DogFour"), for every sound- and spelling-based check. The written-roster
+	// look-alike check below keeps the raw forms a, b.
+	sa, sb := expandDigits(a), expandDigits(b)
+	na, nb := normalize(sa), normalize(sb)
 	if na == "" || nb == "" {
 		return issues // empty handled by single check
 	}
@@ -197,7 +213,7 @@ func checkPair(a, b string) []Issue {
 	}
 
 	// Shared word tokens, e.g. "GoldWing" / "GoldBar" both contain "Gold".
-	shared := sharedTokens(a, b)
+	shared := sharedTokens(sa, sb)
 	for _, t := range shared {
 		add(SevMedium, "shared-word", fmt.Sprintf("both contain the word %q", t))
 	}
@@ -213,7 +229,7 @@ func checkPair(a, b string) []Issue {
 	// all) via a feature-weighted phoneme distance; otherwise we fall back to
 	// Metaphone 3 cross-matching.
 	strongSound := false
-	if d, ok := phonetic.PhoneticDistance(a, b); ok {
+	if d, ok := phonetic.PhoneticDistance(sa, sb); ok {
 		switch {
 		case d <= phonemeHighMax:
 			add(SevHigh, "sound-alike", fmt.Sprintf("sound nearly identical (phoneme distance %.2f via espeak-ng)", d))
@@ -222,22 +238,32 @@ func checkPair(a, b string) []Issue {
 			add(SevMedium, "sound-similar", fmt.Sprintf("sound similar (phoneme distance %.2f via espeak-ng)", d))
 			strongSound = true
 		}
+		// Even when the words differ overall, a shared multi-syllable run of
+		// sounds (e.g. both contain "Dusty") is easily confused on the air.
+		if !strongSound {
+			if syl, od, ok2 := phonetic.PhoneticOverlap(sa, sb); ok2 &&
+				syl >= overlapMinSyllables && od <= overlapMaxDist {
+				add(SevMedium, "sound-overlap", fmt.Sprintf(
+					"share a %d-syllable run of sounds (distance %.2f via espeak-ng); easily confused on the air", syl, od))
+				strongSound = true
+			}
+		}
 	} else {
 		switch {
-		case phonetic.SoundsAlike(a, b):
+		case phonetic.SoundsAlike(sa, sb):
 			add(SevHigh, "sound-alike", "sound nearly identical (matching Metaphone 3 key, vowels included)")
 			strongSound = true
-		case phonetic.SoundsSimilar(a, b):
+		case phonetic.SoundsSimilar(sa, sb):
 			add(SevMedium, "sound-similar", "share the same consonant sounds; likely confusable by ear")
 			strongSound = true
-		case phonetic.SoundsLikeStartOf(a, b):
+		case phonetic.SoundsLikeStartOf(sa, sb):
 			add(SevLow, "sound-prefix", "one sounds like the start of the other")
 		}
 	}
 
 	// Rhyme: same final vowel sound. Takes precedence over a raw common suffix,
 	// which is usually just describing the same rhyme.
-	ra, rb := phonetic.Rhyme(a), phonetic.Rhyme(b)
+	ra, rb := phonetic.Rhyme(sa), phonetic.Rhyme(sb)
 	rhyme := !strongSound && ra != "" && ra == rb && len(ra) >= 2
 	if rhyme {
 		add(SevLow, "rhyme", fmt.Sprintf("rhyme (both end with the %q sound)", ra))

@@ -47,8 +47,12 @@ Three packages, with a one-way dependency `cmd → checker → phonetic`:
   Detail}` — `B` empty for single-callsign findings. Severities are an ordered
   enum `SevInfo < SevLow < SevMedium < SevHigh < SevCritical`. Spelling/sight
   helpers live alongside: `nato.go` (decompose a name into NATO alphabet words),
-  `written.go` (homoglyph folding for written-roster look-alikes), and the
-  `levenshtein`/`tokens` helpers in `checker.go`.
+  `written.go` (homoglyph folding for written-roster look-alikes), `digits.go`
+  (`expandDigits` reads a digit as its spoken word, "Dog4" -> "DogFour"), and the
+  `levenshtein`/`tokens` helpers in `checker.go`. `checkSingle`/`checkPair` run
+  the sound- and spelling-based checks on the digit-expanded form but keep the
+  raw form for the written-roster checks (`look-alike`, `confusable-chars`),
+  where the digit glyph itself is the concern.
 
 - **`internal/phonetic`** — all sound and prosody comparison. This is the heart
   of the tool and has **two interchangeable sound engines**:
