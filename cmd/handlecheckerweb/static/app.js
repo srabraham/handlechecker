@@ -306,6 +306,7 @@ function init() {
   $("finish").addEventListener("click", showSummary);
   $("backToStart").addEventListener("click", backToSetup);
   $("reset").addEventListener("click", reset);
+  $("resetSetup").addEventListener("click", reset);
 
   $("copyApproved").addEventListener("click", (e) => copyText(state.approved.join("\n"), e.target));
   $("copyRejected").addEventListener("click", (e) => copyText(state.rejected.join("\n"), e.target));

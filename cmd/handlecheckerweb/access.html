@@ -33,7 +33,7 @@
     {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
     <form method="get" action="{{.Action}}">
       <label for="key">Access key</label>
-      <input id="key" name="key" type="password" autocomplete="current-password"
+      <input id="key" name="key" type="text" autocomplete="off"
              autofocus required placeholder="Enter access key"{{if .Disabled}} disabled{{end}}>
       <button type="submit"{{if .Disabled}} disabled{{end}}>Continue</button>
     </form>

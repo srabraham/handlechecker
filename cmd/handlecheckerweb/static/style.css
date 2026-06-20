@@ -74,6 +74,8 @@ textarea {
 textarea:focus { outline: none; border-color: var(--accent); }
 
 .actions { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+/* Push the setup-page reset to the far right, away from the primary Start CTA. */
+#resetSetup { margin-left: auto; }
 
 button {
   font: inherit;
