@@ -9,7 +9,7 @@
 <body>
   <header>
     <h1>Handle Checker</h1>
-    <p class="tagline">Vet proposed radio callsigns against your reserved and already-approved handles, one at a time.</p>
+    <p class="tagline">Vet proposed radio callsigns against your reserved and legacy handles.</p>
   </header>
 
   <!-- Setup phase -->
@@ -18,13 +18,13 @@
     <h2>1. Set up the baseline</h2>
     <div class="field">
       <label for="reserved">Reserved handles</label>
-      <p class="hint">Handles that can't be reused — places, or callsigns belonging to other departments. One per line.</p>
-      <textarea id="reserved" rows="5" placeholder="Knight&#10;Base&#10;Dispatch"></textarea>
+      <p class="hint">Handles that should not be used. These can be place names, people, or terms belonging to other departments. One per line.</p>
+      <textarea id="reserved" rows="8" placeholder="Knight&#10;Base&#10;Dispatch"></textarea>
     </div>
     <div class="field">
-      <label for="existing">Already-approved handles</label>
-      <p class="hint">Handles your department has already approved in the past. New approvals are added to this set as you go.</p>
-      <textarea id="existing" rows="6" placeholder="GoldWing&#10;Thunder&#10;Playa"></textarea>
+      <label for="existing">Existing handles</label>
+      <p class="hint">Legacy handles your department has already approved, that don't need to be re-vetted.</p>
+      <textarea id="existing" rows="8" placeholder="GoldWing&#10;Thunder&#10;Playa"></textarea>
     </div>
   </section>
 
@@ -33,7 +33,7 @@
     <h2>2. Propose new handles</h2>
     <div class="field">
       <label for="proposed">Proposed handles to review</label>
-      <p class="hint">Paste the candidates you want to vet. They'll be reviewed one at a time.</p>
+      <p class="hint">Paste the handles you want to vet. They'll be reviewed one at a time.</p>
       <textarea id="proposed" rows="8" placeholder="Nite&#10;GoldBar&#10;Echo"></textarea>
     </div>
     <div class="actions">
