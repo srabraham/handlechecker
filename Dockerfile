@@ -10,7 +10,7 @@ RUN CGO_ENABLED=0 go build -o /handlecheckerweb ./cmd/handlecheckerweb
 # Runtime image with espeak-ng, which enables the phoneme-level sound check.
 FROM debian:bookworm-slim
 RUN apt-get update \
- && apt-get install -y --no-install-recommends espeak-ng \
+ && apt-get install -y --no-install-recommends espeak-ng ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=build /handlecheckercli /usr/local/bin/handlecheckercli
 COPY --from=build /handlecheckerweb /usr/local/bin/handlecheckerweb

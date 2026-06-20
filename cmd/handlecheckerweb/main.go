@@ -74,15 +74,26 @@ func main() {
 	mux.Handle("/", http.FileServer(http.FS(sub)))
 	mux.Handle("/api/check", checkHandler)
 
+	// Optional shared-key gate (ACCESS_KEYS env var). When unset, the site is
+	// open — preserving the local/dev default. When set, every request (page and
+	// API alike) must present a valid key; see authMiddleware.
+	var handler http.Handler = mux
+	if keys := loadAccessKeys(); len(keys) > 0 {
+		// Throttle wrong guesses per client IP to blunt brute-forcing the key.
+		authFails := newRateLimiter(authFailRate, authFailBurst)
+		handler = authMiddleware(keys, authFails, handler)
+		log.Printf("access control enabled: %d key(s) accepted via ?key=, X-Access-Key, or Basic Auth; failed guesses throttled per IP", len(keys))
+	}
+
 	if *tlsDomain == "" {
 		log.Printf("handlecheckerweb listening on %s (plain HTTP)", *addr)
-		if err := http.ListenAndServe(*addr, mux); err != nil {
+		if err := http.ListenAndServe(*addr, handler); err != nil {
 			log.Fatal(err)
 		}
 		return
 	}
 
-	serveTLS(mux, splitDomains(*tlsDomain), *tlsEmail, *tlsCache, *httpAddr, *httpsAddr, *tlsStaging)
+	serveTLS(handler, splitDomains(*tlsDomain), *tlsEmail, *tlsCache, *httpAddr, *httpsAddr, *tlsStaging)
 }
 
 // serveTLS runs the app over HTTPS, obtaining and auto-renewing certificates for

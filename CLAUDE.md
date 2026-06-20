@@ -69,6 +69,22 @@ re-hit Let's Encrypt rate limits), `--https-addr` (default `:443`), `--http-addr
 `--tls-staging` (use the Let's Encrypt staging CA while testing). Certificates
 renew automatically in the background.
 
+Access control: set the `ACCESS_KEYS` env var (comma-separated secrets) to gate
+the whole site — every request, page and API alike, must present a valid key.
+Unset/empty leaves it open (the local/dev default). A visitor may supply the key
+via `?key=SECRET` (cached afterward in an HttpOnly `hc_access` cookie and
+scrubbed from the URL on the next navigation), an `X-Access-Key` header, or HTTP
+Basic Auth (the key is the password; username ignored). Keys are compared in
+constant time. An unauthorized **browser navigation** gets a styled in-app
+"enter access key" page (self-contained, since the real CSS is itself gated)
+whose form submits `?key=`; **API/fetch callers** (and anything under `/api/`)
+get a bare `401` with `WWW-Authenticate: Basic` instead. There are no per-user
+accounts — it's a shared bouncer, not identity. Wrong guesses are throttled
+per client IP (a token bucket reusing `ratelimit.go`: a short burst, then
+~1 guess per few seconds, `429` + `Retry-After` once spent); a **correct** key
+never touches the limiter, and a bare page view (no key presented) costs no
+budget, so only actual guesses are rate-limited. See `auth.go`.
+
 CLI flags: `--min` (minimum severity to print, default `info`), `--fail-on`
 (exit non-zero at this severity or above, default `high`, `never` to always exit
 0), `--no-color`.
@@ -87,7 +103,11 @@ binaries consume `checker`:
   per check; `POST /api/check` calls `checker.CheckAgainst` and returns JSON
   findings tagged by source (`reserved`/`existing`/`self`). The only server-side
   state is the in-process phoneme cache, which stays warm for the process
-  lifetime. No analysis logic lives here either.
+  lifetime. No analysis logic lives here either. `auth.go` adds an optional
+  shared-key gate (`ACCESS_KEYS` env var) as middleware wrapping the whole mux;
+  empty means no gate. The unauthorized-browser page is a self-contained Go
+  template embedded from `access.html` (kept out of `static/`, which the file
+  server would otherwise expose and the gate would block).
 
 - **`internal/checker`** — the analysis engine. `Analyze` runs `checkSingle` on
   each callsign and `checkPair` on every unordered pair, returning `[]Issue`
