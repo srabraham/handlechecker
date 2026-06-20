@@ -13,9 +13,9 @@
   </header>
 
   <!-- Setup phase -->
+  <p id="notice" class="notice">The server does not persist any of your data, so clearing your browser data or switching devices will lose these lists. Use the export buttons on the summary page to keep a copy.</p>
   <section id="setup" class="card">
     <h2>1. Set up the baseline</h2>
-    <p class="notice">The server does not persist any of your data, so clearing your browser data or switching devices will lose these lists. Use the export buttons on the summary page to keep a copy.</p>
     <div class="field">
       <label for="reserved">Reserved handles</label>
       <p class="hint">Handles that can't be reused — places, or callsigns belonging to other departments. One per line.</p>
@@ -75,7 +75,7 @@
     <p id="summaryLine" class="muted"></p>
 
     <div class="field">
-      <label>Approved handles</label>
+      <label>Newly approved</label>
       <textarea id="approvedList" rows="8" readonly></textarea>
       <div class="actions">
         <button id="copyApproved">Copy</button>
@@ -84,7 +84,7 @@
     </div>
 
     <div class="field">
-      <label>Rejected handles</label>
+      <label>Newly rejected</label>
       <textarea id="rejectedList" rows="8" readonly></textarea>
       <div class="actions">
         <button id="copyRejected">Copy</button>

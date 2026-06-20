@@ -13,18 +13,17 @@
  * @typedef {Object} HistoryEntry
  * @property {"approve"|"reject"} action
  * @property {string} candidate
- * @property {boolean} wasNewExisting  Whether approving added the handle to `existing`.
  */
 
 /**
  * The whole app's persisted state (mirrored to localStorage).
  * @typedef {Object} State
  * @property {string[]} reserved
- * @property {string[]} existing   Baseline existing handles + approvals so far.
+ * @property {string[]} existing   Baseline already-approved handles (never grows during review).
  * @property {string[]} proposed   The review queue.
  * @property {number} queueIndex
- * @property {string[]} approved   Candidates approved this session (subset of `existing`).
- * @property {string[]} rejected
+ * @property {string[]} approved   Candidates approved this session.
+ * @property {string[]} rejected   Candidates rejected this session.
  * @property {HistoryEntry[]} history
  */
 
@@ -50,17 +49,18 @@
 
 const STORAGE_KEY = "handlechecker.state.v1";
 
-// Application state. `existing` grows as handles are approved, so later
-// candidates are checked against earlier approvals.
+// Application state. `existing` is the fixed baseline of already-approved
+// handles; session approvals accumulate in `approved` (not `existing`) but are
+// still checked against, so later candidates are vetted against earlier ones.
 /** @type {State} */
 let state = {
   reserved: [],
-  existing: [],   // baseline existing handles + approvals so far
+  existing: [],   // baseline already-approved handles (fixed during review)
   proposed: [],   // the review queue
   queueIndex: 0,
-  approved: [],   // candidates approved this session (subset of existing)
-  rejected: [],
-  history: [],    // decision log, for Undo: {action, candidate, wasNewExisting}
+  approved: [],   // candidates approved this session
+  rejected: [],   // candidates rejected this session
+  history: [],    // decision log, for Undo: {action, candidate}
 };
 
 // --- DOM helpers -------------------------------------------------------------
@@ -78,8 +78,10 @@ function show(name) {
   for (const [k, el] of Object.entries(sections)) {
     el.classList.toggle("hidden", k !== name);
   }
-  // The propose card is a peer of setup and shares its phase.
+  // The propose card and the persistence notice are peers of setup and share
+  // its phase — they only appear on the initial page.
   $("propose").classList.toggle("hidden", name !== "setup");
+  $("notice").classList.toggle("hidden", name !== "setup");
 }
 
 // parseList splits raw textarea input into trimmed, de-duplicated terms, one
@@ -202,7 +204,10 @@ async function showCurrent() {
       body: JSON.stringify({
         candidate,
         reserved: state.reserved,
-        existing: state.existing,
+        // Check against the fixed baseline plus everything approved so far this
+        // session, so each handle is vetted against earlier approvals too. Both
+        // map to the "approved" source badge, which is accurate for either.
+        existing: state.existing.concat(state.approved),
       }),
     });
     if (!resp.ok) throw new Error(await resp.text());
@@ -291,32 +296,27 @@ function esc(s) {
 
 function approve() {
   const c = currentCandidate();
-  const wasNewExisting = !hasCI(state.existing, c);
-  if (wasNewExisting) state.existing.push(c);
   if (!hasCI(state.approved, c)) state.approved.push(c);
-  state.history.push({ action: "approve", candidate: c, wasNewExisting });
+  state.history.push({ action: "approve", candidate: c });
   advance();
 }
 
 function reject() {
   const c = currentCandidate();
   if (!hasCI(state.rejected, c)) state.rejected.push(c);
-  state.history.push({ action: "reject", candidate: c, wasNewExisting: false });
+  state.history.push({ action: "reject", candidate: c });
   advance();
 }
 
 // undo reverses the most recent decision: it removes the candidate from the
-// approved/rejected lists (and from `existing` if approving had added it there),
-// steps the queue back to that handle, and re-checks it. Reachable from both the
-// review pane and the summary, so the last decision can always be corrected.
+// approved/rejected lists, steps the queue back to that handle, and re-checks
+// it. Reachable from both the review pane and the summary, so the last decision
+// can always be corrected.
 function undo() {
   const last = state.history.pop();
   if (!last) return;
   removeCI(state.approved, last.candidate);
   removeCI(state.rejected, last.candidate);
-  if (last.action === "approve" && last.wasNewExisting) {
-    removeCI(state.existing, last.candidate);
-  }
   if (state.queueIndex > 0) state.queueIndex--;
   save();
   show("review");
@@ -342,7 +342,7 @@ function showSummary() {
     `${state.proposed.length} reviewed.`;
   $("approvedList").value = state.approved.join("\n");
   $("rejectedList").value = state.rejected.join("\n");
-  $("fullList").value = state.existing.join("\n");
+  $("fullList").value = state.existing.concat(state.approved).join("\n");
   $("undoSummary").disabled = state.history.length === 0;
   show("summary");
 }
@@ -404,10 +404,10 @@ function init() {
 
   $("copyApproved").addEventListener("click", (/** @type {Event} */ e) => copyText(state.approved.join("\n"), /** @type {HTMLElement} */ (e.target)));
   $("copyRejected").addEventListener("click", (/** @type {Event} */ e) => copyText(state.rejected.join("\n"), /** @type {HTMLElement} */ (e.target)));
-  $("copyFull").addEventListener("click", (/** @type {Event} */ e) => copyText(state.existing.join("\n"), /** @type {HTMLElement} */ (e.target)));
+  $("copyFull").addEventListener("click", (/** @type {Event} */ e) => copyText(state.existing.concat(state.approved).join("\n"), /** @type {HTMLElement} */ (e.target)));
   $("downloadApproved").addEventListener("click", () => download("approved-handles.txt", state.approved.join("\n")));
   $("downloadRejected").addEventListener("click", () => download("rejected-handles.txt", state.rejected.join("\n")));
-  $("downloadFull").addEventListener("click", () => download("all-handles.txt", state.existing.join("\n")));
+  $("downloadFull").addEventListener("click", () => download("all-handles.txt", state.existing.concat(state.approved).join("\n")));
 
   // Resume an in-progress session if one was saved.
   if (load()) {
