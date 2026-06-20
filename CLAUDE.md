@@ -9,11 +9,19 @@ spelling, by sight, and especially by how they sound on the air. It takes a list
 of candidate callsigns, checks each one alone and every pair against each other,
 and prints ranked findings.
 
+A companion web interface (`cmd/handlecheckerweb`) wraps the same engine in an
+incremental intake workflow: seed reserved terms and existing handles, then
+review proposed handles one at a time against that baseline and approve/reject
+each — approvals join the baseline for subsequent checks.
+
 ## Commands
 
 ```sh
 # Run against a list of callsigns
 go run ./cmd/handlecheckercli GoldWing GoldBar golffoxtrot Knight Nite Echo
+
+# Run the web interface, then open http://localhost:8080
+go run ./cmd/handlecheckerweb            # --addr :8080 by default
 
 # Build a binary
 go build -o handlecheckercli ./cmd/handlecheckercli
@@ -25,10 +33,19 @@ go test ./...
 go test ./internal/checker
 go test ./internal/phonetic -run TestRhyme -v
 
-# Build the Docker image (bundles espeak-ng — see below)
+# Build the Docker image (bundles espeak-ng — see below; builds both binaries)
 docker build -t handlechecker .
+
+# Run the CLI in Docker (the image's default entrypoint)
 docker run --rm handlechecker GoldWing Knight Nite
+
+# Run the web interface in Docker, then open http://localhost:8080.
+# Override the entrypoint to switch from the default CLI to the web server.
+docker run --rm --entrypoint handlecheckerweb -p 8080:8080 handlechecker
 ```
+
+Running in Docker (rather than `go run`) is also how you get the espeak-ng
+phoneme engine, which the local PATH usually lacks — see the engine notes below.
 
 CLI flags: `--min` (minimum severity to print, default `info`), `--fail-on`
 (exit non-zero at this severity or above, default `high`, `never` to always exit
@@ -36,20 +53,33 @@ CLI flags: `--min` (minimum severity to print, default `info`), `--fail-on`
 
 ## Architecture
 
-Three packages, with a one-way dependency `cmd → checker → phonetic`:
+Packages with a one-way dependency `cmd → checker → phonetic`; both `cmd`
+binaries consume `checker`:
 
 - **`cmd/handlecheckercli`** — flag parsing, severity parsing, and all terminal
   presentation (ANSI color, exit codes). No analysis logic lives here.
 
+- **`cmd/handlecheckerweb`** — a stateless HTTP server (`main.go`) plus an
+  embedded vanilla-JS single page (`static/`, served via `go:embed`). The
+  browser holds all the lists (persisted to `localStorage`) and re-sends them
+  per check; `POST /api/check` calls `checker.CheckAgainst` and returns JSON
+  findings tagged by source (`reserved`/`existing`/`self`). The only server-side
+  state is the in-process phoneme cache, which stays warm for the process
+  lifetime. No analysis logic lives here either.
+
 - **`internal/checker`** — the analysis engine. `Analyze` runs `checkSingle` on
   each callsign and `checkPair` on every unordered pair, returning `[]Issue`
-  sorted most-severe-first. Every finding is an `Issue{A, B, Severity, Kind,
+  sorted most-severe-first; `CheckAgainst(candidate, baseline)` is the
+  one-vs-many variant the web app uses (candidate alone plus candidate against
+  each baseline term, never baseline-vs-baseline; candidate is always `A`). Every finding is an `Issue{A, B, Severity, Kind,
   Detail}` — `B` empty for single-callsign findings. Severities are an ordered
   enum `SevInfo < SevLow < SevMedium < SevHigh < SevCritical`. Spelling/sight
   helpers live alongside: `nato.go` (decompose a name into NATO alphabet words),
   `written.go` (homoglyph folding for written-roster look-alikes), `digits.go`
-  (`expandDigits` reads a digit as its spoken word, "Dog4" -> "DogFour"), and the
-  `levenshtein`/`tokens` helpers in `checker.go`. `checkSingle`/`checkPair` run
+  (`expandDigits` reads a digit as its spoken word, "Dog4" -> "DogFour"), the
+  `levenshtein`/`tokens` helpers in `checker.go`, and `profanity.go`
+  (`checkProfanity`: a per-callsign CRITICAL check for callsigns that contain or
+  sound like a swear word, with a Scunthorpe-style allowlist). `checkSingle`/`checkPair` run
   the sound- and spelling-based checks on the digit-expanded form but keep the
   raw form for the written-roster checks (`look-alike`, `confusable-chars`),
   where the digit glyph itself is the concern.

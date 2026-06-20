@@ -1,12 +1,16 @@
 # TODO
 
-- [ ] **Profanity / unfortunate-sounds check.** Flag callsigns that are swear
-  words, or whose syllables sound like (or combine into) swear words —
-  including across the camelCase/word boundaries and via the phonetic codes, so
-  obfuscated or accidental spellings are caught too. Should run as a
-  per-callsign check (likely HIGH severity). Needs a curated word list plus
-  phonetic/substring matching; consider an allowlist for false positives
-  (e.g. "Scunthorpe problem").
+- [x] **Profanity / unfortunate-sounds check.** Implemented in
+  `internal/checker/profanity.go` (`checkProfanity`, wired into `checkSingle`):
+  a hardcoded swear-word list (Carlin's seven dirty words plus other
+  unambiguous profanities/slurs) matched by substring across camelCase/word
+  boundaries and by sound (espeak-ng phoneme distance, Metaphone 3 fallback) so
+  phonetic respellings like "Phuck" are caught too. Any hit is CRITICAL. A
+  `profanityAllowlist` exempts the well-known innocent collisions
+  ("Scunthorpe problem"). Possible refinements: cross-token phonetic matching
+  (a swear spanning a camelCase boundary by sound, not just spelling), and
+  leetspeak folding tuned for profanity (1->i) distinct from the roster
+  homoglyph map (1->l).
 
 - [x] **Phoneme-level sound similarity.** Implemented in `internal/phonetic`
   (`phonemes.go`, `features.go`): `espeak-ng` G2P → feature-weighted phoneme edit

@@ -46,6 +46,12 @@ type Issue struct {
 	Severity Severity
 	Kind     string
 	Detail   string
+	// Score ranks how problematic this finding is relative to others at the same
+	// severity (higher = worse); it is the secondary sort key within a severity
+	// band. Sound findings set it from their phoneme distance (1-distance) so the
+	// closest-sounding conflicts rise to the top of their band; findings without a
+	// continuous metric leave it at 0 and keep their existing relative order.
+	Score float64
 }
 
 // Analyze runs every check over the callsigns and returns all issues found,
@@ -62,16 +68,40 @@ func Analyze(callsigns []string) []Issue {
 		}
 	}
 
+	sortIssues(issues)
+	return issues
+}
+
+// CheckAgainst runs the single-callsign checks on candidate plus the pairwise
+// checks of candidate against every term in baseline, returning all issues
+// sorted most-severe first. Unlike Analyze it does not compare baseline terms
+// to one another — it answers "is this one new callsign OK against the existing
+// set?". In every pairwise issue the candidate is A and the baseline term is B.
+func CheckAgainst(candidate string, baseline []string) []Issue {
+	var issues []Issue
+	issues = append(issues, checkSingle(candidate)...)
+	for _, b := range baseline {
+		issues = append(issues, checkPair(candidate, b)...)
+	}
+	sortIssues(issues)
+	return issues
+}
+
+// sortIssues orders issues most-severe first, then most-problematic first within
+// a severity band (by Score), then by A and B for stability.
+func sortIssues(issues []Issue) {
 	sort.SliceStable(issues, func(i, j int) bool {
 		if issues[i].Severity != issues[j].Severity {
 			return issues[i].Severity > issues[j].Severity
+		}
+		if issues[i].Score != issues[j].Score {
+			return issues[i].Score > issues[j].Score
 		}
 		if issues[i].A != issues[j].A {
 			return issues[i].A < issues[j].A
 		}
 		return issues[i].B < issues[j].B
 	})
-	return issues
 }
 
 // --- single-callsign checks --------------------------------------------------
@@ -89,39 +119,6 @@ func checkSingle(c string) []Issue {
 			Detail: "callsign has no letters",
 		})
 		return issues
-	}
-
-	if words, ok := natoDecompose(norm); ok {
-		switch {
-		case len(words) >= 2:
-			issues = append(issues, Issue{
-				A: c, Severity: SevHigh, Kind: "nato-concatenation",
-				Detail: fmt.Sprintf("is just NATO phonetic words strung together (%s)", strings.Join(words, " + ")),
-			})
-		case len(words) == 1:
-			issues = append(issues, Issue{
-				A: c, Severity: SevMedium, Kind: "nato-word",
-				Detail: fmt.Sprintf("is itself a NATO phonetic word (%q)", words[0]),
-			})
-		}
-	} else if lead := leadingNatoWord(norm); lead != "" && len(lead) >= 4 {
-		issues = append(issues, Issue{
-			A: c, Severity: SevLow, Kind: "nato-prefix",
-			Detail: fmt.Sprintf("starts with the NATO phonetic word %q", lead),
-		})
-	}
-
-	switch {
-	case len(norm) < 3:
-		issues = append(issues, Issue{
-			A: c, Severity: SevMedium, Kind: "too-short",
-			Detail: fmt.Sprintf("is very short (%d letters); short callsigns are easily lost in noise", len(norm)),
-		})
-	case len(norm) > 14:
-		issues = append(issues, Issue{
-			A: c, Severity: SevLow, Kind: "too-long",
-			Detail: fmt.Sprintf("is long (%d letters); long callsigns are slow and error-prone on the air", len(norm)),
-		})
 	}
 
 	// Syllable count: aim for 2–5 so the callsign is neither too curt nor too
@@ -146,6 +143,10 @@ func checkSingle(c string) []Issue {
 		})
 	}
 
+	// Profanity is disqualifying on its own — flag a callsign that is, contains,
+	// or sounds like a swear word (CRITICAL).
+	issues = append(issues, checkProfanity(c)...)
+
 	return issues
 }
 
@@ -167,6 +168,23 @@ const (
 	overlapMaxDist      = 0.12
 )
 
+// metaphoneSound returns the strongest Metaphone-3 sound finding for the pair,
+// with ok=false if none. Buckets mirror the phoneme-distance ones: a matching
+// key (with or without vowel positions) is "sound-alike" (HIGH), a shared
+// consonant skeleton is "sound-similar" (MEDIUM), and one sounding like the
+// start of the other is "sound-prefix" (LOW).
+func metaphoneSound(a, b string) (sev Severity, kind, detail string, ok bool) {
+	switch {
+	case phonetic.SoundsAlike(a, b):
+		return SevHigh, "sound-alike", "sound nearly identical (matching Metaphone 3 key, vowels included)", true
+	case phonetic.SoundsSimilar(a, b):
+		return SevMedium, "sound-similar", "share the same consonant sounds; likely confusable by ear", true
+	case phonetic.SoundsLikeStartOf(a, b):
+		return SevLow, "sound-prefix", "one sounds like the start of the other", true
+	}
+	return 0, "", "", false
+}
+
 // --- pairwise checks ---------------------------------------------------------
 
 func checkPair(a, b string) []Issue {
@@ -182,6 +200,12 @@ func checkPair(a, b string) []Issue {
 
 	add := func(sev Severity, kind, detail string) {
 		issues = append(issues, Issue{A: a, B: b, Severity: sev, Kind: kind, Detail: detail})
+	}
+	// addSound is add for findings carrying a phoneme distance: Score is set to
+	// 1-distance so that, among same-severity sound findings, the closest match
+	// (smallest distance) sorts to the top.
+	addSound := func(sev Severity, kind, detail string, dist float64) {
+		issues = append(issues, Issue{A: a, B: b, Severity: sev, Kind: kind, Detail: detail, Score: 1 - dist})
 	}
 
 	// Identical (ignoring case/punctuation/spacing).
@@ -224,40 +248,49 @@ func checkPair(a, b string) []Issue {
 		add(SevMedium, "common-prefix",
 			fmt.Sprintf("start with the same %d letters (%q); they sound alike on first syllable", pre, na[:pre]))
 	}
-	// Phonetic: the most important radio concern — sounding the same. When
-	// espeak-ng is installed we compare actual pronunciations (vowel quality and
-	// all) via a feature-weighted phoneme distance; otherwise we fall back to
-	// Metaphone 3 cross-matching.
+	// Phonetic: the most important radio concern — sounding the same. We run two
+	// engines and would rather over-warn than miss a conflict:
+	//   1. Phoneme distance (espeak-ng) — precise and vowel-aware (it can tell
+	//      "Gold" from "Gild"). The primary signal when espeak-ng is installed.
+	//   2. Metaphone 3 — a vowel-collapsing consonant-skeleton match. Always
+	//      consulted; on its own when espeak-ng is unavailable, and *alongside*
+	//      the phoneme distance otherwise so a consonant clash that espeak rates
+	//      as distant still surfaces.
+	// phonemeSev tracks the severity the phoneme engine assigned (-1 if it stayed
+	// silent or is unavailable); Metaphone is then only surfaced when it warns
+	// more strongly than that, so the two engines never emit duplicate findings.
 	strongSound := false
+	phonemeSev := Severity(-1)
 	if d, ok := phonetic.PhoneticDistance(sa, sb); ok {
 		switch {
 		case d <= phonemeHighMax:
-			add(SevHigh, "sound-alike", fmt.Sprintf("sound nearly identical (phoneme distance %.2f via espeak-ng)", d))
-			strongSound = true
+			addSound(SevHigh, "sound-alike", fmt.Sprintf("sound nearly identical (phoneme distance %.2f via espeak-ng)", d), d)
+			phonemeSev = SevHigh
 		case d <= phonemeMedMax:
-			add(SevMedium, "sound-similar", fmt.Sprintf("sound similar (phoneme distance %.2f via espeak-ng)", d))
-			strongSound = true
+			addSound(SevMedium, "sound-similar", fmt.Sprintf("sound similar (phoneme distance %.2f via espeak-ng)", d), d)
+			phonemeSev = SevMedium
 		}
 		// Even when the words differ overall, a shared multi-syllable run of
 		// sounds (e.g. both contain "Dusty") is easily confused on the air.
-		if !strongSound {
+		if phonemeSev < 0 {
 			if syl, od, ok2 := phonetic.PhoneticOverlap(sa, sb); ok2 &&
 				syl >= overlapMinSyllables && od <= overlapMaxDist {
-				add(SevMedium, "sound-overlap", fmt.Sprintf(
-					"share a %d-syllable run of sounds (distance %.2f via espeak-ng); easily confused on the air", syl, od))
-				strongSound = true
+				addSound(SevMedium, "sound-overlap", fmt.Sprintf(
+					"share a %d-syllable run of sounds (distance %.2f via espeak-ng); easily confused on the air", syl, od), od)
+				phonemeSev = SevMedium
 			}
 		}
-	} else {
-		switch {
-		case phonetic.SoundsAlike(sa, sb):
-			add(SevHigh, "sound-alike", "sound nearly identical (matching Metaphone 3 key, vowels included)")
+	}
+	if phonemeSev >= SevMedium {
+		strongSound = true
+	}
+	// Metaphone 3, always consulted. Surfaced only when it warns more strongly
+	// than the phoneme verdict (phonemeSev is -1 when espeak-ng is unavailable, so
+	// every Metaphone finding shows in that case — the former fallback behavior).
+	if msev, mkind, mdetail, mok := metaphoneSound(sa, sb); mok && msev > phonemeSev {
+		add(msev, mkind, mdetail)
+		if msev >= SevMedium {
 			strongSound = true
-		case phonetic.SoundsSimilar(sa, sb):
-			add(SevMedium, "sound-similar", "share the same consonant sounds; likely confusable by ear")
-			strongSound = true
-		case phonetic.SoundsLikeStartOf(sa, sb):
-			add(SevLow, "sound-prefix", "one sounds like the start of the other")
 		}
 	}
 

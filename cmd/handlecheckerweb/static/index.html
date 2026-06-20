@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Handle Checker</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Handle Checker</h1>
+    <p class="tagline">Vet proposed radio callsigns against your reserved terms and existing handles, one at a time.</p>
+  </header>
+
+  <!-- Setup phase -->
+  <section id="setup" class="card">
+    <h2>1. Set up the baseline</h2>
+    <div class="field">
+      <label for="reserved">Reserved terms</label>
+      <p class="hint">Names that must never be reused. One per line.</p>
+      <textarea id="reserved" rows="5" placeholder="Knight&#10;Base&#10;Dispatch"></textarea>
+    </div>
+    <div class="field">
+      <label for="existing">Existing handles</label>
+      <p class="hint">Handles already in use. New approvals are added to this set as you go.</p>
+      <textarea id="existing" rows="6" placeholder="GoldWing&#10;Thunder&#10;Playa"></textarea>
+    </div>
+    <div class="field">
+      <label for="proposed">Proposed handles to review</label>
+      <p class="hint">Paste the candidates you want to vet. They'll be reviewed one at a time.</p>
+      <textarea id="proposed" rows="8" placeholder="Nite&#10;GoldBar&#10;Echo"></textarea>
+    </div>
+    <div class="actions">
+      <button id="start" class="primary">Start review →</button>
+      <span id="setupSummary" class="muted"></span>
+    </div>
+  </section>
+
+  <!-- Review phase -->
+  <section id="review" class="card hidden">
+    <div class="review-head">
+      <div>
+        <span class="muted" id="progress"></span>
+        <h2 id="candidate"></h2>
+      </div>
+      <button id="backToSetup" class="link">← Edit lists</button>
+    </div>
+
+    <div id="banner" class="banner"></div>
+    <div id="issues" class="issues"></div>
+
+    <div class="actions review-actions">
+      <button id="approve" class="approve">✓ Approve</button>
+      <button id="reject" class="reject">✗ Reject</button>
+      <button id="skip" class="skip">Skip</button>
+    </div>
+
+    <div class="tallies">
+      <span class="tally approved-tally">Approved: <strong id="approvedCount">0</strong></span>
+      <span class="tally rejected-tally">Rejected: <strong id="rejectedCount">0</strong></span>
+      <button id="finish" class="link">Finish &amp; export →</button>
+    </div>
+  </section>
+
+  <!-- Summary phase -->
+  <section id="summary" class="card hidden">
+    <h2>Review complete</h2>
+    <p id="summaryLine" class="muted"></p>
+
+    <div class="field">
+      <label>Approved handles</label>
+      <textarea id="approvedList" rows="8" readonly></textarea>
+      <div class="actions">
+        <button id="copyApproved">Copy</button>
+        <button id="downloadApproved">Download .txt</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Full resulting handle set (existing + approved)</label>
+      <textarea id="fullList" rows="8" readonly></textarea>
+      <div class="actions">
+        <button id="copyFull">Copy</button>
+        <button id="downloadFull">Download .txt</button>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button id="resumeReview" class="link">← Back to review</button>
+      <button id="reset" class="danger">Reset everything</button>
+    </div>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>

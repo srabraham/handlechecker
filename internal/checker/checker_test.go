@@ -3,7 +3,20 @@ package checker
 import (
 	"strings"
 	"testing"
+
+	"github.com/srabraham/handlechecker/internal/phonetic"
 )
+
+// soundIssues returns the sound-related findings (kind prefixed "sound").
+func soundIssues(issues []Issue) []Issue {
+	var out []Issue
+	for _, is := range issues {
+		if strings.HasPrefix(is.Kind, "sound") {
+			out = append(out, is)
+		}
+	}
+	return out
+}
 
 // hasKind reports whether any issue involving the given subjects has the kind.
 func hasKind(issues []Issue, kind string) bool {
@@ -13,28 +26,6 @@ func hasKind(issues []Issue, kind string) bool {
 		}
 	}
 	return false
-}
-
-func TestNatoConcatenation(t *testing.T) {
-	issues := checkSingle("golffoxtrot")
-	if !hasKind(issues, "nato-concatenation") {
-		t.Fatalf("expected nato-concatenation for golffoxtrot, got %+v", issues)
-	}
-}
-
-func TestSingleNatoWord(t *testing.T) {
-	if !hasKind(checkSingle("Tango"), "nato-word") {
-		t.Error("expected Tango to be flagged as a NATO word")
-	}
-}
-
-func TestNatoDecompose(t *testing.T) {
-	if w, ok := natoDecompose("golffoxtrot"); !ok || strings.Join(w, " ") != "golf foxtrot" {
-		t.Errorf("natoDecompose(golffoxtrot) = %v, %v", w, ok)
-	}
-	if _, ok := natoDecompose("goldwing"); ok {
-		t.Error("goldwing should not decompose into NATO words")
-	}
 }
 
 func TestSharedPrefixWord(t *testing.T) {
@@ -61,6 +52,51 @@ func TestSoundAlike(t *testing.T) {
 	// Different spelling, same sound.
 	if !hasKind(checkPair("Knight", "Nite"), "sound-alike") {
 		t.Error("expected sound-alike for Knight/Nite")
+	}
+}
+
+// TestMetaphoneEscalation checks the both-engines behavior: when espeak-ng is
+// available, the phoneme engine and Metaphone 3 both run. "Gild" and "Gold"
+// differ only in their vowel, so the vowel-aware phoneme engine rates them a
+// MEDIUM sound-similar, while vowel-collapsing Metaphone rates them a HIGH
+// sound-alike. We surface both — the precise distance and Metaphone's stronger
+// warning — rather than letting the phoneme verdict hide the conflict.
+func TestMetaphoneEscalation(t *testing.T) {
+	if !phonetic.PhonemesAvailable() {
+		t.Skip("espeak-ng not installed; the both-engines escalation path is not exercised")
+	}
+	sounds := soundIssues(checkPair("Gild", "Gold"))
+	var high, med bool
+	for _, is := range sounds {
+		if is.Kind == "sound-alike" && is.Severity == SevHigh {
+			high = true
+		}
+		if is.Kind == "sound-similar" && is.Severity == SevMedium {
+			med = true
+		}
+	}
+	if !high {
+		t.Errorf("expected a HIGH sound-alike (Metaphone escalation) for Gild/Gold, got %+v", sounds)
+	}
+	if !med {
+		t.Errorf("expected a MEDIUM sound-similar (phoneme distance) for Gild/Gold, got %+v", sounds)
+	}
+}
+
+// TestNoDuplicateSound checks that when the phoneme engine already rates a pair
+// as a HIGH sound-alike, Metaphone does not pile on a second, redundant sound
+// finding. "Cold" and "Gold" are phonetically near-identical (distance ~0.02),
+// so only the single phoneme finding should survive.
+func TestNoDuplicateSound(t *testing.T) {
+	if !phonetic.PhonemesAvailable() {
+		t.Skip("espeak-ng not installed; the de-duplication path needs the phoneme engine")
+	}
+	sounds := soundIssues(checkPair("Cold", "Gold"))
+	if len(sounds) != 1 {
+		t.Fatalf("expected exactly one sound finding for Cold/Gold, got %d: %+v", len(sounds), sounds)
+	}
+	if !strings.Contains(sounds[0].Detail, "espeak-ng") {
+		t.Errorf("expected the surviving finding to be the phoneme one, got %+v", sounds[0])
 	}
 }
 
@@ -105,6 +141,49 @@ func TestSyllableBounds(t *testing.T) {
 	}
 }
 
+func TestProfanityContains(t *testing.T) {
+	// The swear word appears verbatim, including across a camelCase boundary.
+	for _, c := range []string{"Shitstorm", "GoldFucker", "Cunt", "mother-fucker"} {
+		issues := checkSingle(c)
+		var crit *Issue
+		for i := range issues {
+			if issues[i].Kind == "profanity" {
+				crit = &issues[i]
+			}
+		}
+		if crit == nil {
+			t.Errorf("expected a profanity issue for %q, got %+v", c, issues)
+			continue
+		}
+		if crit.Severity != SevCritical {
+			t.Errorf("expected CRITICAL profanity for %q, got %v", c, crit.Severity)
+		}
+	}
+}
+
+func TestProfanitySoundsLike(t *testing.T) {
+	// "Phuck" is spelled differently but sounds like a swear word; both the
+	// espeak-ng and Metaphone engines should catch it.
+	if !hasKind(checkSingle("Phuck"), "profanity") {
+		t.Error("expected profanity (sounds-like) for Phuck")
+	}
+}
+
+func TestProfanityClean(t *testing.T) {
+	for _, c := range []string{"GoldWing", "Thunder", "Tangerine", "Knight"} {
+		if hasKind(checkSingle(c), "profanity") {
+			t.Errorf("%q should not be flagged as profanity", c)
+		}
+	}
+}
+
+func TestProfanityAllowlist(t *testing.T) {
+	// "Scunthorpe" contains "cunt" but is an allowlisted innocent word.
+	if hasKind(checkSingle("Scunthorpe"), "profanity") {
+		t.Error("Scunthorpe should be exempt from the profanity check (Scunthorpe problem)")
+	}
+}
+
 func TestNoFalsePositive(t *testing.T) {
 	issues := checkPair("Thunder", "Playa")
 	for _, is := range issues {
@@ -119,6 +198,33 @@ func TestAnalyzeSorted(t *testing.T) {
 	if len(issues) == 0 {
 		t.Fatal("expected issues")
 	}
+	for i := 1; i < len(issues); i++ {
+		if issues[i-1].Severity < issues[i].Severity {
+			t.Error("issues not sorted by descending severity")
+		}
+	}
+}
+
+func TestCheckAgainst(t *testing.T) {
+	issues := CheckAgainst("Nite", []string{"Knight", "GoldWing"})
+	if len(issues) == 0 {
+		t.Fatal("expected issues for Nite against the baseline")
+	}
+	// The candidate is always A, the baseline term is B; no baseline-vs-baseline
+	// pairs should appear (e.g. Knight vs GoldWing).
+	foundKnight := false
+	for _, is := range issues {
+		if is.A != "Nite" {
+			t.Errorf("expected candidate Nite as A, got %+v", is)
+		}
+		if is.B == "Knight" {
+			foundKnight = true
+		}
+	}
+	if !foundKnight {
+		t.Errorf("expected a conflict between Nite and Knight, got %+v", issues)
+	}
+	// Sorted most-severe first.
 	for i := 1; i < len(issues); i++ {
 		if issues[i-1].Severity < issues[i].Severity {
 			t.Error("issues not sorted by descending severity")
