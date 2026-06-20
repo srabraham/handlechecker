@@ -1,9 +1,58 @@
+// @ts-check
 "use strict";
+
+// This file is plain JavaScript that ships to the browser verbatim (embedded by
+// the Go server) — there is no build step. The `// @ts-check` directive above
+// plus jsconfig.json let TypeScript type-check it in the editor and in CI
+// (`tsc --noEmit`) via JSDoc annotations, so we get TypeScript's safety while
+// still serving hand-authored JS. Keep the JSDoc typedefs below in sync with the
+// Go DTOs in main.go (issueDTO / the /api/check response).
+
+/**
+ * One reviewed decision, retained so it can be undone.
+ * @typedef {Object} HistoryEntry
+ * @property {"approve"|"reject"} action
+ * @property {string} candidate
+ * @property {boolean} wasNewExisting  Whether approving added the handle to `existing`.
+ */
+
+/**
+ * The whole app's persisted state (mirrored to localStorage).
+ * @typedef {Object} State
+ * @property {string[]} reserved
+ * @property {string[]} existing   Baseline existing handles + approvals so far.
+ * @property {string[]} proposed   The review queue.
+ * @property {number} queueIndex
+ * @property {string[]} approved   Candidates approved this session (subset of `existing`).
+ * @property {string[]} rejected
+ * @property {HistoryEntry[]} history
+ */
+
+/**
+ * A single finding from /api/check — mirrors issueDTO in main.go.
+ * @typedef {Object} Issue
+ * @property {string} severity      "HIGH", "MEDIUM", …
+ * @property {number} severityRank
+ * @property {string} kind
+ * @property {string} detail
+ * @property {string} b             Conflicting baseline term ("" for self checks).
+ * @property {string} source        "reserved" | "existing" | "self".
+ */
+
+/**
+ * The /api/check response — mirrors the response struct in main.go.
+ * @typedef {Object} CheckResult
+ * @property {string} candidate
+ * @property {Issue[]} issues
+ * @property {string} worst       Severity string of the worst issue, "" if none.
+ * @property {number} worstRank   -1 if no issues.
+ */
 
 const STORAGE_KEY = "handlechecker.state.v1";
 
 // Application state. `existing` grows as handles are approved, so later
 // candidates are checked against earlier approvals.
+/** @type {State} */
 let state = {
   reserved: [],
   existing: [],   // baseline existing handles + approvals so far
@@ -16,19 +65,31 @@ let state = {
 
 // --- DOM helpers -------------------------------------------------------------
 
+// `$` is intentionally typed loosely (any): elements are accessed for many
+// different concrete types (.value on textareas, .disabled on buttons, etc.) and
+// per-call casts would drown the file in noise. The real type safety lives in
+// the State/Issue/CheckResult typedefs and the function signatures below.
+/** @type {(id: string) => any} */
 const $ = (id) => document.getElementById(id);
 const sections = { setup: $("setup"), review: $("review"), summary: $("summary") };
 
+/** @param {string} name */
 function show(name) {
   for (const [k, el] of Object.entries(sections)) {
     el.classList.toggle("hidden", k !== name);
   }
+  // The propose card is a peer of setup and shares its phase.
+  $("propose").classList.toggle("hidden", name !== "setup");
 }
 
 // parseList splits raw textarea input into trimmed, de-duplicated terms, one
 // per line. Handles may contain spaces and commas, so newlines are the only
 // separator. Duplicates are removed case-insensitively, keeping the first
 // spelling seen.
+/**
+ * @param {string} raw
+ * @returns {string[]}
+ */
 function parseList(raw) {
   const seen = new Set();
   const out = [];
@@ -43,12 +104,21 @@ function parseList(raw) {
   return out;
 }
 
+/**
+ * @param {string[]} list
+ * @param {string} term
+ * @returns {boolean}
+ */
 function hasCI(list, term) {
   const key = term.toLowerCase();
   return list.some((x) => x.toLowerCase() === key);
 }
 
 // removeCI removes the first case-insensitive match of term from list in place.
+/**
+ * @param {string[]} list
+ * @param {string} term
+ */
 function removeCI(list, term) {
   const key = term.toLowerCase();
   const i = list.findIndex((x) => x.toLowerCase() === key);
@@ -61,6 +131,7 @@ function save() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
+/** @returns {boolean} True if a resumable in-progress session was loaded. */
 function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -104,10 +175,12 @@ function backToSetup() {
 
 // --- review phase ------------------------------------------------------------
 
+/** @returns {string} */
 function currentCandidate() {
   return state.proposed[state.queueIndex];
 }
 
+/** @returns {Promise<void>} */
 async function showCurrent() {
   updateTallies();
   if (state.queueIndex >= state.proposed.length) {
@@ -137,18 +210,21 @@ async function showCurrent() {
     renderResult(data);
   } catch (err) {
     $("banner").className = "banner high";
-    $("banner").textContent = "Error checking handle: " + err.message;
+    $("banner").textContent =
+      "Error checking handle: " + (err instanceof Error ? err.message : String(err));
   } finally {
     setReviewButtons(true);
   }
 }
 
+/** @param {boolean} enabled */
 function setReviewButtons(enabled) {
   for (const id of ["approve", "reject"]) $(id).disabled = !enabled;
   // Undo is available whenever there's a decision to undo and we aren't mid-check.
   $("undo").disabled = !enabled || state.history.length === 0;
 }
 
+/** @param {CheckResult} data */
 function renderResult(data) {
   // Recommendation banner keyed off the worst severity.
   const banner = $("banner");
@@ -193,15 +269,24 @@ function renderResult(data) {
   }
 }
 
+/**
+ * @param {string} source
+ * @returns {string}
+ */
 function sourceBadge(source) {
   if (source === "reserved") return ` <span class="source-badge reserved">reserved</span>`;
   if (source === "existing") return ` <span class="source-badge existing">approved</span>`;
   return "";
 }
 
+/**
+ * @param {string} s
+ * @returns {string}
+ */
 function esc(s) {
-  return String(s).replace(/[&<>"']/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  /** @type {Record<string, string>} */
+  const map = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+  return String(s).replace(/[&<>"']/g, (c) => map[c]);
 }
 
 function approve() {
@@ -262,6 +347,10 @@ function showSummary() {
   show("summary");
 }
 
+/**
+ * @param {string} filename
+ * @param {string} text
+ */
 function download(filename, text) {
   const blob = new Blob([text], { type: "text/plain" });
   const url = URL.createObjectURL(blob);
@@ -272,6 +361,11 @@ function download(filename, text) {
   URL.revokeObjectURL(url);
 }
 
+/**
+ * @param {string} text
+ * @param {HTMLElement} btn
+ * @returns {Promise<void>}
+ */
 async function copyText(text, btn) {
   try {
     await navigator.clipboard.writeText(text);
@@ -308,9 +402,9 @@ function init() {
   $("reset").addEventListener("click", reset);
   $("resetSetup").addEventListener("click", reset);
 
-  $("copyApproved").addEventListener("click", (e) => copyText(state.approved.join("\n"), e.target));
-  $("copyRejected").addEventListener("click", (e) => copyText(state.rejected.join("\n"), e.target));
-  $("copyFull").addEventListener("click", (e) => copyText(state.existing.join("\n"), e.target));
+  $("copyApproved").addEventListener("click", (/** @type {Event} */ e) => copyText(state.approved.join("\n"), /** @type {HTMLElement} */ (e.target)));
+  $("copyRejected").addEventListener("click", (/** @type {Event} */ e) => copyText(state.rejected.join("\n"), /** @type {HTMLElement} */ (e.target)));
+  $("copyFull").addEventListener("click", (/** @type {Event} */ e) => copyText(state.existing.join("\n"), /** @type {HTMLElement} */ (e.target)));
   $("downloadApproved").addEventListener("click", () => download("approved-handles.txt", state.approved.join("\n")));
   $("downloadRejected").addEventListener("click", () => download("rejected-handles.txt", state.rejected.join("\n")));
   $("downloadFull").addEventListener("click", () => download("all-handles.txt", state.existing.join("\n")));

@@ -33,6 +33,10 @@ go test ./...
 go test ./internal/checker
 go test ./internal/phonetic -run TestRhyme -v
 
+# Type-check the web app's JavaScript (see the cmd/handlecheckerweb note below).
+# tsgo is wired in as a Go tool, so no Node/npm is needed.
+go tool tsgo --project cmd/handlecheckerweb/jsconfig.json
+
 # Build the Docker image (bundles espeak-ng — see below; builds both binaries)
 docker build -t handlechecker .
 
@@ -111,6 +115,21 @@ binaries consume `checker`:
   stderr via `log`) records explicit login attempts (granted/denied) and every
   `/api/check` call as client IP + path only — never the key, query string, or
   request body.
+
+  `static/app.js` is hand-authored JavaScript served verbatim — there is **no
+  build step and no transpilation**, so what's in the file is what the browser
+  runs. It is nonetheless type-checked: a `// @ts-check` directive plus JSDoc
+  typedefs (`State`, `Issue`, `CheckResult`, …) give it TypeScript-level safety,
+  with `cmd/handlecheckerweb/jsconfig.json` (`checkJs` + `strict`) driving the
+  check. Run it with `go tool tsgo --project cmd/handlecheckerweb/jsconfig.json`
+  — `tsgo` (the native-Go TypeScript compiler, `github.com/microsoft/typescript-go`)
+  is registered as a Go tool in `go.mod`, so no Node/npm is required. The
+  JSDoc typedefs mirror the JSON DTOs in `main.go` (`issueDTO` and the
+  `/api/check` response) — keep them in sync when changing either side. The
+  `$()` DOM helper is deliberately typed loosely (`any`); the real type safety
+  lives in the typedefs and function signatures. `jsconfig.json` lives one level
+  up from `static/`, not inside it, for the same reason as `access.html`: the
+  `go:embed`'d file server would otherwise serve it.
 
 - **`internal/checker`** — the analysis engine. `Analyze` runs `checkSingle` on
   each callsign and `checkPair` on every unordered pair, returning `[]Issue`
