@@ -1,11 +1,89 @@
 package main
 
 import (
+	"bytes"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+// captureLog runs fn with the standard logger redirected to a buffer and returns
+// what was written, so tests can assert on access-log output.
+func captureLog(fn func()) string {
+	var buf bytes.Buffer
+	prevOut, prevFlags := log.Writer(), log.Flags()
+	log.SetOutput(&buf)
+	log.SetFlags(0)
+	defer func() {
+		log.SetOutput(prevOut)
+		log.SetFlags(prevFlags)
+	}()
+	fn()
+	return buf.String()
+}
+
+func TestAuthMiddlewareLogsExplicitLoginAttempts(t *testing.T) {
+	h := authMiddleware([]string{"alpha"}, nil, okHandler)
+
+	// logForRequest runs one request through the middleware and returns whatever
+	// it wrote to the log.
+	logForRequest := func(setup func(*http.Request)) string {
+		return captureLog(func() {
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			setup(r)
+			h.ServeHTTP(httptest.NewRecorder(), r)
+		})
+	}
+
+	// A correct key supplied via header is a granted login attempt.
+	out := logForRequest(func(r *http.Request) {
+		r.Header.Set("X-Access-Key", "alpha")
+	})
+	if !strings.Contains(out, "login attempt granted") {
+		t.Errorf("granted via header: want a granted login attempt, got %q", out)
+	}
+
+	// A wrong key supplied via header is a denied login attempt.
+	out = logForRequest(func(r *http.Request) {
+		r.Header.Set("X-Access-Key", "nope")
+	})
+	if !strings.Contains(out, "login attempt denied") {
+		t.Errorf("denied via header: want a denied login attempt, got %q", out)
+	}
+
+	// A session cookie is "already logged in", not a fresh login attempt.
+	out = logForRequest(func(r *http.Request) {
+		r.AddCookie(&http.Cookie{Name: accessCookieName, Value: "alpha"})
+	})
+	if strings.Contains(out, "login attempt") {
+		t.Errorf("cookie should not log a login attempt, got %q", out)
+	}
+
+	// A bare page view presents no credential, so it logs nothing.
+	out = logForRequest(func(*http.Request) {})
+	if strings.Contains(out, "login attempt") {
+		t.Errorf("bare page view should not log a login attempt, got %q", out)
+	}
+}
+
+func TestLoginLogOmitsKeyAndQuery(t *testing.T) {
+	// The key arrives in the query string; the log must record the path only,
+	// never the secret.
+	const secret = "s3cr3t-key"
+	h := authMiddleware([]string{secret}, nil, okHandler)
+	out := captureLog(func() {
+		r := httptest.NewRequest(http.MethodGet, "/?key="+secret, nil)
+		h.ServeHTTP(httptest.NewRecorder(), r)
+	})
+	if !strings.Contains(out, "login attempt granted") {
+		t.Fatalf("expected a granted login attempt, got %q", out)
+	}
+	if strings.Contains(out, secret) {
+		t.Fatalf("log leaked the access key: %q", out)
+	}
+}
 
 // okHandler is a stand-in for the real mux: it 200s anything that reaches it, so
 // tests can tell "passed the gate" from "blocked by the gate".

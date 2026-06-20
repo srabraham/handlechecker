@@ -4,6 +4,7 @@ import (
 	"crypto/subtle"
 	_ "embed" // for the //go:embed access.html directive
 	"html/template"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -65,10 +66,22 @@ func authMiddleware(keys []string, fails *rateLimiter, next http.Handler) http.H
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		presented, fromQuery := presentedKey(r)
+		presented, src := presentedKey(r)
+		ok := presented != "" && keyMatches(keys, presented)
 
-		if presented != "" && keyMatches(keys, presented) {
-			if fromQuery {
+		// Log explicit login attempts (a key supplied via query/header/basic, not
+		// a session cookie). Only the client IP, the target path, and the outcome
+		// are recorded — never the key itself or any request body.
+		if src.isLoginAttempt() {
+			outcome := "denied"
+			if ok {
+				outcome = "granted"
+			}
+			log.Printf("login attempt %s ip=%s path=%s", outcome, clientIP(r), r.URL.Path)
+		}
+
+		if ok {
+			if src == keyQuery {
 				// Persist the key so subsequent requests need not carry it, and
 				// scrub it from the URL on plain navigations.
 				http.SetCookie(w, &http.Cookie{
@@ -119,24 +132,41 @@ func authMiddleware(keys []string, fails *rateLimiter, next http.Handler) http.H
 	})
 }
 
+// keySource identifies where a request's access key came from.
+type keySource int
+
+const (
+	keyNone   keySource = iota // no key presented
+	keyQuery                   // ?key= query parameter
+	keyHeader                  // X-Access-Key header
+	keyBasic                   // HTTP Basic Auth password
+	keyCookie                  // hc_access session cookie (already logged in)
+)
+
+// isLoginAttempt reports whether the source is an explicit credential — i.e. a
+// fresh login attempt — as opposed to a session cookie (already authenticated)
+// or no key at all (just loading a page).
+func (s keySource) isLoginAttempt() bool {
+	return s == keyQuery || s == keyHeader || s == keyBasic
+}
+
 // presentedKey extracts the access key a request offers, trying the query
-// parameter, the X-Access-Key header, Basic Auth password, then the cookie. The
-// boolean reports whether it came from the query parameter (the only source that
-// warrants caching it in a cookie and scrubbing the URL).
-func presentedKey(r *http.Request) (key string, fromQuery bool) {
+// parameter, the X-Access-Key header, Basic Auth password, then the cookie, and
+// reports which source supplied it (keyNone if none).
+func presentedKey(r *http.Request) (key string, src keySource) {
 	if k := r.URL.Query().Get(accessKeyParam); k != "" {
-		return k, true
+		return k, keyQuery
 	}
 	if k := r.Header.Get("X-Access-Key"); k != "" {
-		return k, false
+		return k, keyHeader
 	}
 	if _, pass, ok := r.BasicAuth(); ok && pass != "" {
-		return pass, false
+		return pass, keyBasic
 	}
 	if c, err := r.Cookie(accessCookieName); err == nil && c.Value != "" {
-		return unescapeCookie(c.Value), false
+		return unescapeCookie(c.Value), keyCookie
 	}
-	return "", false
+	return "", keyNone
 }
 
 // unescapeCookie reverses any percent-encoding net/http applied when writing the

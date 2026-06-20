@@ -186,6 +186,9 @@ type checkResponse struct {
 }
 
 func handleCheck(w http.ResponseWriter, r *http.Request) {
+	// Access log: client IP and endpoint only — no request body or candidate.
+	log.Printf("check request ip=%s path=%s", clientIP(r), r.URL.Path)
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

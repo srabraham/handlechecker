@@ -107,7 +107,10 @@ binaries consume `checker`:
   shared-key gate (`ACCESS_KEYS` env var) as middleware wrapping the whole mux;
   empty means no gate. The unauthorized-browser page is a self-contained Go
   template embedded from `access.html` (kept out of `static/`, which the file
-  server would otherwise expose and the gate would block).
+  server would otherwise expose and the gate would block). Access logging (to
+  stderr via `log`) records explicit login attempts (granted/denied) and every
+  `/api/check` call as client IP + path only — never the key, query string, or
+  request body.
 
 - **`internal/checker`** — the analysis engine. `Analyze` runs `checkSingle` on
   each callsign and `checkPair` on every unordered pair, returning `[]Issue`

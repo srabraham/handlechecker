@@ -195,7 +195,7 @@ function renderResult(data) {
 
 function sourceBadge(source) {
   if (source === "reserved") return ` <span class="source-badge reserved">reserved</span>`;
-  if (source === "existing") return ` <span class="source-badge existing">existing</span>`;
+  if (source === "existing") return ` <span class="source-badge existing">approved</span>`;
   return "";
 }
 

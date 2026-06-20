@@ -9,21 +9,21 @@
 <body>
   <header>
     <h1>Handle Checker</h1>
-    <p class="tagline">Vet proposed radio callsigns against your reserved and existing handles, one at a time.</p>
+    <p class="tagline">Vet proposed radio callsigns against your reserved and already-approved handles, one at a time.</p>
   </header>
 
   <!-- Setup phase -->
   <section id="setup" class="card">
     <h2>1. Set up the baseline</h2>
-    <p class="notice">Your lists stay in this browser only (saved to its local storage). Nothing is sent to or stored on a server, so clearing your browser data or switching devices will lose them — use the export buttons on the summary page to keep a copy.</p>
+    <p class="notice">The server does not persist any of your data, so clearing your browser data or switching devices will lose these lists. Use the export buttons on the summary page to keep a copy.</p>
     <div class="field">
       <label for="reserved">Reserved handles</label>
       <p class="hint">Handles that can't be reused — places, or callsigns belonging to other departments. One per line.</p>
       <textarea id="reserved" rows="5" placeholder="Knight&#10;Base&#10;Dispatch"></textarea>
     </div>
     <div class="field">
-      <label for="existing">Existing handles</label>
-      <p class="hint">Your department's existing handles. New approvals are added to this set as you go.</p>
+      <label for="existing">Already-approved handles</label>
+      <p class="hint">Handles your department has already approved in the past. New approvals are added to this set as you go.</p>
       <textarea id="existing" rows="6" placeholder="GoldWing&#10;Thunder&#10;Playa"></textarea>
     </div>
     <div class="field">
@@ -87,7 +87,7 @@
     </div>
 
     <div class="field">
-      <label>Full resulting handle set (existing + approved)</label>
+      <label>Full resulting handle set (already-approved + newly approved)</label>
       <textarea id="fullList" rows="8" readonly></textarea>
       <div class="actions">
         <button id="copyFull">Copy</button>
