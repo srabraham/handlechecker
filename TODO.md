@@ -1,5 +1,26 @@
 # TODO
 
+See `IMPROVEMENTS.md` for the broader prioritized critique and roadmap.
+
+- [x] **Procedure-word / safety-word check.** Implemented in
+  `internal/checker/prowords.go` (`checkProwords`, wired into `checkSingle`):
+  flags callsigns that are or sound like a radio procedure word (Roger, Copy,
+  Break, Over, Out, … — HIGH) or an emergency/distress word (Mayday, Pan-Pan,
+  Help, Fire, Medic, … — CRITICAL), matching each spoken word token exactly or
+  by ear (espeak distance, Metaphone fallback), plus a substring pass over the
+  glued handle for the distinctive words so detection doesn't depend on
+  capitalization ("Breakbreak" == "BreakBreak"), with a Scunthorpe-style
+  allowlist ("Breakfast"). Possible refinements: multi-word prowords
+  ("say again"), and extending substring coverage to the short words
+  ("over"/"out") if a safe boundary heuristic is found.
+
+- [x] **Phoneme-aware prosody.** `Rhyme` and `SyllableCount`
+  (`internal/phonetic/prosody.go`) now derive from the espeak-ng phoneme stream
+  when available (falling back to the spelling heuristic otherwise), so silent
+  letters and digraphs no longer fool them. Syllable counting adds an extra
+  syllable for wide triphthong tokens ("aI@") that espeak fuses, so "Playa" /
+  "Fire" aren't undercounted.
+
 - [x] **Profanity / unfortunate-sounds check.** Implemented in
   `internal/checker/profanity.go` (`checkProfanity`, wired into `checkSingle`):
   a hardcoded swear-word list (Carlin's seven dirty words plus other

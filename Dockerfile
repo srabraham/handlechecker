@@ -15,6 +15,8 @@ RUN apt-get update \
 COPY --from=build /handlecheckercli /usr/local/bin/handlecheckercli
 COPY --from=build /handlecheckerweb /usr/local/bin/handlecheckerweb
 # Default to the CLI for backward compatibility; override the entrypoint to run
-# the web server (see EXPOSE below).
-EXPOSE 8080
+# the web server. Ports: 8080 for plain HTTP (local / behind a reverse proxy);
+# 80 and 443 when the web server terminates TLS itself via -tls-domain (ACME
+# HTTP-01 challenge + redirect on 80, HTTPS on 443).
+EXPOSE 8080 80 443
 ENTRYPOINT ["handlecheckercli"]

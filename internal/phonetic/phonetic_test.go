@@ -52,40 +52,47 @@ func TestSoundsLikeStartOf(t *testing.T) {
 }
 
 func TestRhyme(t *testing.T) {
-	cases := map[string]string{
-		"GoldWing": "ing",
-		"Sting":    "ing",
-		"Nite":     "it",
-		"Kite":     "it",
-		"Thunder":  "er",
-	}
-	for in, want := range cases {
-		if got := Rhyme(in); got != want {
-			t.Errorf("Rhyme(%q) = %q, want %q", in, got, want)
+	// Rhyme keys are opaque and engine-dependent (espeak phonemes when present,
+	// a spelling heuristic otherwise), so assert the relationships that matter
+	// rather than exact keys — these hold under both engines.
+	rhyming := [][2]string{{"GoldWing", "Sting"}, {"Nite", "Kite"}}
+	for _, p := range rhyming {
+		if Rhyme(p[0]) == "" || Rhyme(p[0]) != Rhyme(p[1]) {
+			t.Errorf("expected %q and %q to rhyme, got %q / %q", p[0], p[1], Rhyme(p[0]), Rhyme(p[1]))
 		}
 	}
-	if Rhyme("GoldWing") != Rhyme("Sting") {
-		t.Error("GoldWing and Sting should rhyme")
-	}
-	if Rhyme("Nite") != Rhyme("Kite") {
-		t.Error("Nite and Kite should rhyme")
+	if Rhyme("GoldWing") == Rhyme("Thunder") {
+		t.Error("GoldWing and Thunder should not rhyme")
 	}
 }
 
 func TestSyllableCount(t *testing.T) {
+	// Counts that agree between the espeak phoneme reading and the spelling
+	// heuristic, so the test holds whether or not espeak-ng is installed.
 	cases := map[string]int{
-		"Gold":      1,
-		"GoldWing":  2,
-		"Thunder":   2,
-		"Catherine": 3,
-		"Playa":     2,
-		"Candle":    2, // silent-e exception for consonant + "le"
-		"Nite":      1, // silent trailing e
+		"Gold":     1,
+		"GoldWing": 2,
+		"Thunder":  2,
+		"Playa":    2,
+		"Candle":   2, // syllabic 'l' / silent-e consonant + "le"
+		"Nite":     1, // silent trailing e
 	}
 	for in, want := range cases {
 		if got := SyllableCount(in); got != want {
 			t.Errorf("SyllableCount(%q) = %d, want %d", in, got, want)
 		}
+	}
+}
+
+func TestSyllableCountPhoneme(t *testing.T) {
+	if !PhonemesAvailable() {
+		t.Skip("espeak-ng not installed; phoneme syllable counting is not exercised")
+	}
+	// espeak reads "Catherine" as two syllables ("CATH-rin"), which the
+	// vowel-group spelling heuristic (3) gets wrong — the phoneme path is more
+	// faithful to how it is actually spoken.
+	if got := SyllableCount("Catherine"); got != 2 {
+		t.Errorf("phoneme SyllableCount(Catherine) = %d, want 2", got)
 	}
 }
 

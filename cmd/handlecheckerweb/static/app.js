@@ -11,6 +11,7 @@ let state = {
   queueIndex: 0,
   approved: [],   // candidates approved this session (subset of existing)
   rejected: [],
+  history: [],    // decision log, for Undo: {action, candidate, wasNewExisting}
 };
 
 // --- DOM helpers -------------------------------------------------------------
@@ -47,6 +48,13 @@ function hasCI(list, term) {
   return list.some((x) => x.toLowerCase() === key);
 }
 
+// removeCI removes the first case-insensitive match of term from list in place.
+function removeCI(list, term) {
+  const key = term.toLowerCase();
+  const i = list.findIndex((x) => x.toLowerCase() === key);
+  if (i >= 0) list.splice(i, 1);
+}
+
 // --- persistence -------------------------------------------------------------
 
 function save() {
@@ -75,6 +83,7 @@ function startReview() {
   state.queueIndex = 0;
   state.approved = [];
   state.rejected = [];
+  state.history = [];
 
   if (state.proposed.length === 0) {
     $("setupSummary").textContent = "Enter at least one proposed handle to review.";
@@ -136,6 +145,8 @@ async function showCurrent() {
 
 function setReviewButtons(enabled) {
   for (const id of ["approve", "reject"]) $(id).disabled = !enabled;
+  // Undo is available whenever there's a decision to undo and we aren't mid-check.
+  $("undo").disabled = !enabled || state.history.length === 0;
 }
 
 function renderResult(data) {
@@ -195,15 +206,36 @@ function esc(s) {
 
 function approve() {
   const c = currentCandidate();
-  if (!hasCI(state.existing, c)) state.existing.push(c);
+  const wasNewExisting = !hasCI(state.existing, c);
+  if (wasNewExisting) state.existing.push(c);
   if (!hasCI(state.approved, c)) state.approved.push(c);
+  state.history.push({ action: "approve", candidate: c, wasNewExisting });
   advance();
 }
 
 function reject() {
   const c = currentCandidate();
   if (!hasCI(state.rejected, c)) state.rejected.push(c);
+  state.history.push({ action: "reject", candidate: c, wasNewExisting: false });
   advance();
+}
+
+// undo reverses the most recent decision: it removes the candidate from the
+// approved/rejected lists (and from `existing` if approving had added it there),
+// steps the queue back to that handle, and re-checks it. Reachable from both the
+// review pane and the summary, so the last decision can always be corrected.
+function undo() {
+  const last = state.history.pop();
+  if (!last) return;
+  removeCI(state.approved, last.candidate);
+  removeCI(state.rejected, last.candidate);
+  if (last.action === "approve" && last.wasNewExisting) {
+    removeCI(state.existing, last.candidate);
+  }
+  if (state.queueIndex > 0) state.queueIndex--;
+  save();
+  show("review");
+  showCurrent();
 }
 
 function advance() {
@@ -226,6 +258,7 @@ function showSummary() {
   $("approvedList").value = state.approved.join("\n");
   $("rejectedList").value = state.rejected.join("\n");
   $("fullList").value = state.existing.join("\n");
+  $("undoSummary").disabled = state.history.length === 0;
   show("summary");
 }
 
@@ -253,7 +286,7 @@ async function copyText(text, btn) {
 function reset() {
   if (!confirm("Clear all lists and start over?")) return;
   localStorage.removeItem(STORAGE_KEY);
-  state = { reserved: [], existing: [], proposed: [], queueIndex: 0, approved: [], rejected: [] };
+  state = { reserved: [], existing: [], proposed: [], queueIndex: 0, approved: [], rejected: [], history: [] };
   $("reserved").value = "";
   $("existing").value = "";
   $("proposed").value = "";
@@ -268,6 +301,8 @@ function init() {
   $("backToSetup").addEventListener("click", backToSetup);
   $("approve").addEventListener("click", approve);
   $("reject").addEventListener("click", reject);
+  $("undo").addEventListener("click", undo);
+  $("undoSummary").addEventListener("click", undo);
   $("finish").addEventListener("click", showSummary);
   $("backToStart").addEventListener("click", backToSetup);
   $("reset").addEventListener("click", reset);

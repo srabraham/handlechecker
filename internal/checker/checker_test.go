@@ -184,6 +184,65 @@ func TestProfanityAllowlist(t *testing.T) {
 	}
 }
 
+func TestProwords(t *testing.T) {
+	// A handle that is, or sounds like, a procedure word — including buried in a
+	// compound handle, and via a respelling ("Brake" for "break").
+	for _, c := range []string{"Roger", "Copy", "GoldBreak", "Brake"} {
+		issues := checkSingle(c)
+		if !hasKind(issues, "proword") {
+			t.Errorf("expected a proword issue for %q, got %+v", c, issues)
+			continue
+		}
+		for _, is := range issues {
+			if is.Kind == "proword" && is.Severity != SevHigh {
+				t.Errorf("expected HIGH proword for %q, got %v", c, is.Severity)
+			}
+		}
+	}
+}
+
+func TestSafetyWords(t *testing.T) {
+	for _, c := range []string{"Mayday", "Help", "Medic"} {
+		issues := checkSingle(c)
+		if !hasKind(issues, "safety-word") {
+			t.Errorf("expected a safety-word issue for %q, got %+v", c, issues)
+			continue
+		}
+		for _, is := range issues {
+			if is.Kind == "safety-word" && is.Severity != SevCritical {
+				t.Errorf("expected CRITICAL safety-word for %q, got %v", c, is.Severity)
+			}
+		}
+	}
+}
+
+func TestProwordsClean(t *testing.T) {
+	for _, c := range []string{"GoldWing", "Thunder", "Tangerine", "Playa",
+		"Rover", "Scout", "Helper"} { // contain over/out/help only as substrings
+		if hasKind(checkSingle(c), "proword") || hasKind(checkSingle(c), "safety-word") {
+			t.Errorf("%q should not be flagged as a proword/safety word", c)
+		}
+	}
+}
+
+// TestProwordGlued checks that a proword glued into an all-lower-case run is
+// caught the same as the camelCase spelling — detection must not depend on a
+// handle's capitalization (the "break break" urgent proword said as one word).
+func TestProwordGlued(t *testing.T) {
+	for _, c := range []string{"BreakBreak", "Breakbreak", "breakbreak", "BREAKBREAK"} {
+		if !hasKind(checkSingle(c), "proword") {
+			t.Errorf("expected a proword issue for %q (glued 'break')", c)
+		}
+	}
+}
+
+func TestProwordAllowlist(t *testing.T) {
+	// "Breakfast" embeds "break" but is an innocent word.
+	if hasKind(checkSingle("Breakfast"), "proword") {
+		t.Error("Breakfast should be exempt from the proword check")
+	}
+}
+
 func TestNoFalsePositive(t *testing.T) {
 	issues := checkPair("Thunder", "Playa")
 	for _, is := range issues {

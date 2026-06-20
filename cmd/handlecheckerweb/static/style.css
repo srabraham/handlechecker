@@ -48,6 +48,17 @@ h1 { margin: 0; font-size: 1.6rem; }
 .field label { display: block; font-weight: 600; margin-bottom: .25rem; }
 .hint { color: var(--muted); font-size: .85rem; margin: 0 0 .4rem; }
 
+.notice {
+  color: var(--muted);
+  font-size: .85rem;
+  background: rgba(79, 140, 255, 0.08);
+  border: 1px solid var(--card-border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: .6rem .8rem;
+  margin: 0 0 1.25rem;
+}
+
 textarea {
   width: 100%;
   background: #0f1115;
@@ -78,6 +89,7 @@ button:hover { border-color: var(--accent); }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 button.approve { background: var(--approve); border-color: var(--approve); color: #fff; }
 button.reject { background: var(--reject); border-color: var(--reject); color: #fff; }
+button.undo { background: transparent; }
 button.danger { color: var(--reject); border-color: var(--reject); background: transparent; }
 button.link { background: none; border: none; color: var(--accent); padding: .3rem; }
 button.link:hover { text-decoration: underline; }

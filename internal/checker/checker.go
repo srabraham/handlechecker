@@ -147,6 +147,10 @@ func checkSingle(c string) []Issue {
 	// or sounds like a swear word (CRITICAL).
 	issues = append(issues, checkProfanity(c)...)
 
+	// Procedure words (HIGH) and emergency words (CRITICAL): a callsign that
+	// sounds like net procedure or a distress call is confusable with it.
+	issues = append(issues, checkProwords(c)...)
+
 	return issues
 }
 

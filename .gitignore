@@ -27,6 +27,9 @@ go.work.sum
 # env file
 .env
 
+# TLS cache (Let's Encrypt certificates + ACME account key) — never commit
+certs/
+
 # Editor/IDE
 # .idea/
 # .vscode/
