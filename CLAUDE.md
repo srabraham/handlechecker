@@ -10,7 +10,7 @@ of candidate callsigns, checks each one alone and every pair against each other,
 and prints ranked findings.
 
 A companion web interface (`cmd/handlecheckerweb`) wraps the same engine in an
-incremental intake workflow: seed reserved terms and existing handles, then
+incremental intake workflow: seed reserved handles and existing handles, then
 review proposed handles one at a time against that baseline and approve/reject
 each — approvals join the baseline for subsequent checks.
 

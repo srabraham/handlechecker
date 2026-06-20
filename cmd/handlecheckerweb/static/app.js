@@ -135,7 +135,7 @@ async function showCurrent() {
 }
 
 function setReviewButtons(enabled) {
-  for (const id of ["approve", "reject", "skip"]) $(id).disabled = !enabled;
+  for (const id of ["approve", "reject"]) $(id).disabled = !enabled;
 }
 
 function renderResult(data) {
@@ -206,10 +206,6 @@ function reject() {
   advance();
 }
 
-function skip() {
-  advance();
-}
-
 function advance() {
   state.queueIndex++;
   save();
@@ -223,24 +219,12 @@ function updateTallies() {
 
 // --- summary phase -----------------------------------------------------------
 
-// resumeReview returns to the review pane from the summary. If the queue was
-// fully reviewed, step back to the last handle so the pane has something to
-// show (otherwise showCurrent would bounce straight back to the summary).
-function resumeReview() {
-  if (state.proposed.length === 0) return;
-  if (state.queueIndex >= state.proposed.length) {
-    state.queueIndex = state.proposed.length - 1;
-    save();
-  }
-  show("review");
-  showCurrent();
-}
-
 function showSummary() {
   $("summaryLine").textContent =
     `${state.approved.length} approved, ${state.rejected.length} rejected, ` +
     `${state.proposed.length} reviewed.`;
   $("approvedList").value = state.approved.join("\n");
+  $("rejectedList").value = state.rejected.join("\n");
   $("fullList").value = state.existing.join("\n");
   show("summary");
 }
@@ -284,14 +268,15 @@ function init() {
   $("backToSetup").addEventListener("click", backToSetup);
   $("approve").addEventListener("click", approve);
   $("reject").addEventListener("click", reject);
-  $("skip").addEventListener("click", skip);
   $("finish").addEventListener("click", showSummary);
-  $("resumeReview").addEventListener("click", resumeReview);
+  $("backToStart").addEventListener("click", backToSetup);
   $("reset").addEventListener("click", reset);
 
   $("copyApproved").addEventListener("click", (e) => copyText(state.approved.join("\n"), e.target));
+  $("copyRejected").addEventListener("click", (e) => copyText(state.rejected.join("\n"), e.target));
   $("copyFull").addEventListener("click", (e) => copyText(state.existing.join("\n"), e.target));
   $("downloadApproved").addEventListener("click", () => download("approved-handles.txt", state.approved.join("\n")));
+  $("downloadRejected").addEventListener("click", () => download("rejected-handles.txt", state.rejected.join("\n")));
   $("downloadFull").addEventListener("click", () => download("all-handles.txt", state.existing.join("\n")));
 
   // Resume an in-progress session if one was saved.

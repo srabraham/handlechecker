@@ -78,7 +78,6 @@ button:hover { border-color: var(--accent); }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 button.approve { background: var(--approve); border-color: var(--approve); color: #fff; }
 button.reject { background: var(--reject); border-color: var(--reject); color: #fff; }
-button.skip { background: transparent; }
 button.danger { color: var(--reject); border-color: var(--reject); background: transparent; }
 button.link { background: none; border: none; color: var(--accent); padding: .3rem; }
 button.link:hover { text-decoration: underline; }

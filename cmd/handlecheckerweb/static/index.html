@@ -9,20 +9,20 @@
 <body>
   <header>
     <h1>Handle Checker</h1>
-    <p class="tagline">Vet proposed radio callsigns against your reserved terms and existing handles, one at a time.</p>
+    <p class="tagline">Vet proposed radio callsigns against your reserved and existing handles, one at a time.</p>
   </header>
 
   <!-- Setup phase -->
   <section id="setup" class="card">
     <h2>1. Set up the baseline</h2>
     <div class="field">
-      <label for="reserved">Reserved terms</label>
-      <p class="hint">Names that must never be reused. One per line.</p>
+      <label for="reserved">Reserved handles</label>
+      <p class="hint">Handles that can't be reused — places, or callsigns belonging to other departments. One per line.</p>
       <textarea id="reserved" rows="5" placeholder="Knight&#10;Base&#10;Dispatch"></textarea>
     </div>
     <div class="field">
       <label for="existing">Existing handles</label>
-      <p class="hint">Handles already in use. New approvals are added to this set as you go.</p>
+      <p class="hint">Your department's existing handles. New approvals are added to this set as you go.</p>
       <textarea id="existing" rows="6" placeholder="GoldWing&#10;Thunder&#10;Playa"></textarea>
     </div>
     <div class="field">
@@ -52,7 +52,6 @@
     <div class="actions review-actions">
       <button id="approve" class="approve">✓ Approve</button>
       <button id="reject" class="reject">✗ Reject</button>
-      <button id="skip" class="skip">Skip</button>
     </div>
 
     <div class="tallies">
@@ -77,6 +76,15 @@
     </div>
 
     <div class="field">
+      <label>Rejected handles</label>
+      <textarea id="rejectedList" rows="8" readonly></textarea>
+      <div class="actions">
+        <button id="copyRejected">Copy</button>
+        <button id="downloadRejected">Download .txt</button>
+      </div>
+    </div>
+
+    <div class="field">
       <label>Full resulting handle set (existing + approved)</label>
       <textarea id="fullList" rows="8" readonly></textarea>
       <div class="actions">
@@ -86,7 +94,7 @@
     </div>
 
     <div class="actions">
-      <button id="resumeReview" class="link">← Back to review</button>
+      <button id="backToStart" class="link">← Back to start</button>
       <button id="reset" class="danger">Reset everything</button>
     </div>
   </section>
