@@ -1,0 +1,3 @@
+# This file is not used by anything!
+# To set reserved defaults, make a file called reserved-defaults.example.txt in this
+# same directory and add the reservations there, one per line.

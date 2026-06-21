@@ -45,7 +45,10 @@ h1 { margin: 0; font-size: 1.6rem; }
 .hidden { display: none; }
 
 .field { margin-bottom: 1.25rem; }
-.field label { display: block; font-weight: 600; margin-bottom: .25rem; }
+.field label, .field h3 { display: block; font-weight: 600; margin-bottom: .25rem; }
+.field h3 { font-size: 1rem; }
+.label-row { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+.label-row label { margin-bottom: 0; }
 .hint { color: var(--muted); font-size: .85rem; margin: 0 0 .4rem; }
 
 .notice {
@@ -171,3 +174,18 @@ button.link:hover { text-decoration: underline; }
 }
 .tally { font-size: .9rem; color: var(--muted); }
 .tallies .link { margin-left: auto; }
+
+/* In-app confirmation modal (native <dialog>, centered by showModal()). */
+.modal {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  max-width: 420px;
+  width: calc(100% - 2rem);
+}
+.modal::backdrop { background: rgba(0, 0, 0, .6); }
+.modal h3 { margin: 0 0 .5rem; font-size: 1.1rem; }
+.modal p { margin: 0 0 1.4rem; color: var(--muted); }
+.modal-actions { justify-content: flex-end; }

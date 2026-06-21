@@ -30,6 +30,10 @@ func swScore(x, y string) float64 {
 // "DustyDog" / "ADustyLog") are easily confused on the air even when their
 // overall lengths differ enough that PhoneticDistance looks safe. ok is false
 // when espeak-ng is unavailable.
+//
+// To count, the run must capture one word whole at the start or end of the other
+// (see phonemeOverlap); an interior-only match, or a whole word buried mid-word
+// in the other, is reported as no overlap (syllables 0, distance 1).
 func PhoneticOverlap(a, b string) (syllables int, dist float64, ok bool) {
 	pa, err := phonemize(a)
 	if err != nil || len(pa) == 0 {
@@ -51,6 +55,28 @@ func PhoneticOverlap(a, b string) (syllables int, dist float64, ok bool) {
 func phonemeOverlap(pa, pb []string) (syllables int, dist float64) {
 	i0, i1, j0, j1 := localAlign(pa, pb)
 	if i1 <= i0 {
+		return 0, 1
+	}
+	// The overlap only counts when one callsign is heard, complete, at the START
+	// or END of the other — e.g. "DustyDog" at the tail of "ADustyLog", or
+	// "Ranger" at the tail of "Stranger". Two guards enforce that:
+	//
+	//   1. Whole word: the run must span an entire word on one side. A run clipped
+	//      at both ends of *both* words drops each word's distinguishing onset
+	//      and/or coda — the cues that keep them apart on the air. "Abraham" and
+	//      "Zebra" share only the interior "-bra-" (Abraham loses its "-ham", Zebra
+	//      its "Z"), so neither is whole; without this they scored a spurious 0.03.
+	//
+	//   2. At an edge: that whole word must align to a prefix or suffix of the
+	//      other, not a buried interior fragment. The whole of "Random"
+	//      (r a n d @ m) loosely matches the interior "...ranken..." of
+	//      "Frankenstein" (f|r a N k @ n|s t aI n) at a low 0.08, but it is walled
+	//      in by "f" before and "stein" after, so it is not confusable.
+	wholeA := i0 == 0 && i1 == len(pa)
+	wholeB := j0 == 0 && j1 == len(pb)
+	edgeA := i0 == 0 || i1 == len(pa) // run touches a prefix/suffix of a
+	edgeB := j0 == 0 || j1 == len(pb) // run touches a prefix/suffix of b
+	if !((wholeA && edgeB) || (wholeB && edgeA)) {
 		return 0, 1
 	}
 	subA, subB := pa[i0:i1], pb[j0:j1]

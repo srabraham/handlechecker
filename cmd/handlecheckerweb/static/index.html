@@ -17,7 +17,10 @@
   <section id="setup" class="card">
     <h2>1. Set up the baseline</h2>
     <div class="field">
-      <label for="reserved">Reserved handles</label>
+      <div class="label-row">
+        <label for="reserved">Reserved handles</label>
+        <button type="button" id="loadReservedDefaults" class="link hidden">Load defaults</button>
+      </div>
       <p class="hint">Handles that should not be used. These can be place names, people, or terms belonging to other departments. One per line.</p>
       <textarea id="reserved" rows="8" placeholder="Knight&#10;Base&#10;Dispatch"></textarea>
     </div>
@@ -25,6 +28,10 @@
       <label for="existing">Existing handles</label>
       <p class="hint">Legacy handles your department has already approved, that don't need to be re-vetted.</p>
       <textarea id="existing" rows="8" placeholder="GoldWing&#10;Thunder&#10;Playa"></textarea>
+    </div>
+    <div class="field">
+      <h3>Profanity</h3>
+      <p class="hint">The server also checks every proposed handle for various profane terms — including ones spelled across camelCase boundaries or disguised phonetically — so you don't need to seed those yourself.</p>
     </div>
   </section>
 
@@ -107,6 +114,17 @@
       <button id="reset" class="danger">Reset everything</button>
     </div>
   </section>
+
+  <!-- Confirmation modal (replaces window.confirm, which some browsers suppress
+       when the page/tab isn't focused). Driven by confirmDialog() in app.js. -->
+  <dialog id="confirmModal" class="modal">
+    <h3 id="confirmTitle"></h3>
+    <p id="confirmMessage"></p>
+    <div class="actions modal-actions">
+      <button type="button" id="confirmCancel" class="link">Cancel</button>
+      <button type="button" id="confirmOk" class="primary">Confirm</button>
+    </div>
+  </dialog>
 
   <script src="app.js"></script>
 </body>

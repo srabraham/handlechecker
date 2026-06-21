@@ -30,6 +30,11 @@ go.work.sum
 # TLS cache (Let's Encrypt certificates + ACME account key) — never commit
 certs/
 
+# Local reserved-handle defaults for the web UI's "Load defaults" button.
+# Only reserved-defaults.example.txt is checked in (as a template); the real
+# reserved-defaults.txt is local and embedded at build time if present.
+cmd/handlecheckerweb/reserved-defaults.txt
+
 # Editor/IDE
 # .idea/
 # .vscode/

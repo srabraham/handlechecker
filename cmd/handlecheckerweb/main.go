@@ -37,6 +37,27 @@ import (
 //go:embed static
 var staticFS embed.FS
 
+// reservedDefaultsFS embeds the reserved-defaults files. The glob always matches
+// reserved-defaults.example.txt (checked in), so the build never fails even when
+// the real reserved-defaults.txt — gitignored, created locally — is absent. Only
+// reserved-defaults.txt is loaded at runtime (see loadReservedDefaults); the
+// example file is a template for that, never served as defaults.
+//
+//go:embed reserved-defaults*.txt
+var reservedDefaultsFS embed.FS
+
+// loadReservedDefaults returns the embedded reserved-defaults.txt contents — the
+// newline-delimited default reserved handles offered by the web UI's "Load
+// defaults" button — or nil when that file wasn't present at build time (only the
+// example template was embedded). A nil result leaves the button hidden.
+func loadReservedDefaults() []byte {
+	b, err := reservedDefaultsFS.ReadFile("reserved-defaults.txt")
+	if err != nil {
+		return nil
+	}
+	return b
+}
+
 // letsEncryptStagingURL is the ACME directory for Let's Encrypt's staging
 // environment: untrusted certificates but far higher rate limits, for testing
 // the provisioning flow without burning the production quota.
@@ -57,6 +78,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("embed: %v", err)
 	}
+	reservedDefaults := loadReservedDefaults()
+	log.Printf("reserved-defaults: %d handle(s) embedded for the \"Load defaults\" button", countLines(reservedDefaults))
 
 	// Only /api/check is rate-limited; static assets (the SPA's html/js/css) are
 	// cheap to serve and limiting them would throttle ordinary page loads.
@@ -73,6 +96,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServer(http.FS(sub)))
 	mux.Handle("/api/check", checkHandler)
+	mux.HandleFunc("/api/defaults/reserved", handleReservedDefaults(reservedDefaults))
 
 	// Optional shared-key gate (ACCESS_KEYS env var). When unset, the site is
 	// open — preserving the local/dev default. When set, every request (page and
@@ -157,6 +181,37 @@ func splitDomains(s string) []string {
 		}
 	}
 	return out
+}
+
+// handleReservedDefaults serves the embedded default reserved handles as plain
+// text (the raw file contents) for the web UI's "Load defaults" button. If the
+// embedded list is empty it 404s, which the client treats as "no defaults
+// available" and keeps the button hidden.
+func handleReservedDefaults(defaults []byte) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if len(defaults) == 0 {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Write(defaults)
+	}
+}
+
+// countLines reports the number of non-blank lines in b, for logging how many
+// default handles were loaded.
+func countLines(b []byte) int {
+	n := 0
+	for _, line := range strings.Split(string(b), "\n") {
+		if strings.TrimSpace(line) != "" {
+			n++
+		}
+	}
+	return n
 }
 
 // checkRequest is the body of POST /api/check.

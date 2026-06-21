@@ -166,7 +166,9 @@ const (
 // A shared run of sounds (local alignment) is flagged when it spans at least
 // this many syllables and matches at least this cleanly (normalized distance
 // within the run). This catches pairs whose global distance looks safe only
-// because they differ at the edges, e.g. "DustyDog" / "ADustyLog".
+// because they differ at the edges, e.g. "DustyDog" / "ADustyLog". PhoneticOverlap
+// additionally requires the run to contain a whole word on one side, so an
+// interior-only match (e.g. "Abraham" / "Zebra" sharing "-bra-") does not count.
 const (
 	overlapMinSyllables = 2
 	overlapMaxDist      = 0.12

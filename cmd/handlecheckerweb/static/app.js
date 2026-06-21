@@ -127,6 +127,47 @@ function removeCI(list, term) {
   if (i >= 0) list.splice(i, 1);
 }
 
+// confirmDialog shows the in-app modal and resolves true if the user confirms,
+// false if they cancel or dismiss it (Cancel button, Escape, or backdrop click).
+// It replaces window.confirm(), which browsers suppress when the page/tab isn't
+// focused — leaving the confirm-guarded action to silently no-op.
+/**
+ * @param {{title: string, message: string, confirmLabel?: string, danger?: boolean}} opts
+ * @returns {Promise<boolean>}
+ */
+function confirmDialog({ title, message, confirmLabel = "Confirm", danger = false }) {
+  /** @type {HTMLDialogElement} */
+  const dlg = $("confirmModal");
+  const ok = $("confirmOk");
+  const cancel = $("confirmCancel");
+  $("confirmTitle").textContent = title;
+  $("confirmMessage").textContent = message;
+  ok.textContent = confirmLabel;
+  ok.className = danger ? "danger" : "primary";
+
+  return new Promise((resolve) => {
+    const onOk = () => dlg.close("ok");
+    const onCancel = () => dlg.close("cancel");
+    // A click whose target is the dialog itself landed on the backdrop, not the
+    // content — treat it as a dismiss.
+    const onBackdrop = (/** @type {MouseEvent} */ e) => { if (e.target === dlg) dlg.close("cancel"); };
+    const onClose = () => {
+      ok.removeEventListener("click", onOk);
+      cancel.removeEventListener("click", onCancel);
+      dlg.removeEventListener("click", onBackdrop);
+      dlg.removeEventListener("close", onClose);
+      resolve(dlg.returnValue === "ok"); // "" on Escape ⇒ false
+    };
+    ok.addEventListener("click", onOk);
+    cancel.addEventListener("click", onCancel);
+    dlg.addEventListener("click", onBackdrop);
+    dlg.addEventListener("close", onClose);
+    dlg.returnValue = ""; // reset so a stale value can't read as confirmed
+    dlg.showModal();
+    ok.focus();
+  });
+}
+
 // --- persistence -------------------------------------------------------------
 
 function save() {
@@ -173,6 +214,34 @@ function backToSetup() {
   $("existing").value = state.existing.join("\n");
   $("proposed").value = state.proposed.join("\n");
   show("setup");
+}
+
+// setupReservedDefaults wires up the "Load defaults" button beside the Reserved
+// handles textarea. The defaults come from the server (GET
+// /api/defaults/reserved), which only returns them when an operator has supplied
+// a defaults file; otherwise it 404s and we leave the button hidden. The fetched
+// text is cached so the click fills the textarea instantly.
+/** @returns {Promise<void>} */
+async function setupReservedDefaults() {
+  let text = "";
+  try {
+    const resp = await fetch("/api/defaults/reserved");
+    if (!resp.ok) return; // 404 = no defaults configured; keep the button hidden
+    text = await resp.text();
+  } catch {
+    return; // network/server error: silently leave the button hidden
+  }
+  const btn = $("loadReservedDefaults");
+  btn.classList.remove("hidden");
+  btn.addEventListener("click", async () => {
+    const ta = $("reserved");
+    if (ta.value.trim() && !(await confirmDialog({
+      title: "Replace reserved handles?",
+      message: "This replaces the current Reserved handles with the defaults.",
+      confirmLabel: "Replace",
+    }))) return;
+    ta.value = text;
+  });
 }
 
 // --- review phase ------------------------------------------------------------
@@ -377,8 +446,13 @@ async function copyText(text, btn) {
   }
 }
 
-function reset() {
-  if (!confirm("Clear all lists and start over?")) return;
+async function reset() {
+  if (!(await confirmDialog({
+    title: "Reset everything?",
+    message: "This clears all lists and starts over. This can't be undone.",
+    confirmLabel: "Reset everything",
+    danger: true,
+  }))) return;
   localStorage.removeItem(STORAGE_KEY);
   state = { reserved: [], existing: [], proposed: [], queueIndex: 0, approved: [], rejected: [], history: [] };
   $("reserved").value = "";
@@ -408,6 +482,9 @@ function init() {
   $("downloadApproved").addEventListener("click", () => download("approved-handles.txt", state.approved.join("\n")));
   $("downloadRejected").addEventListener("click", () => download("rejected-handles.txt", state.rejected.join("\n")));
   $("downloadFull").addEventListener("click", () => download("all-handles.txt", state.existing.concat(state.approved).join("\n")));
+
+  // Offer server-provided default reserved handles, if any are configured.
+  setupReservedDefaults();
 
   // Resume an in-progress session if one was saved.
   if (load()) {
