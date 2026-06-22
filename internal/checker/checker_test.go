@@ -28,6 +28,16 @@ func hasKind(issues []Issue, kind string) bool {
 	return false
 }
 
+// hasKindSev reports whether any issue has the given kind at the given severity.
+func hasKindSev(issues []Issue, kind string, sev Severity) bool {
+	for _, is := range issues {
+		if is.Kind == kind && is.Severity == sev {
+			return true
+		}
+	}
+	return false
+}
+
 func TestSharedPrefixWord(t *testing.T) {
 	issues := checkPair("GoldWing", "GoldBar")
 	if !hasKind(issues, "shared-word") {
@@ -97,6 +107,206 @@ func TestNoDuplicateSound(t *testing.T) {
 	}
 	if !strings.Contains(sounds[0].Detail, "espeak-ng") {
 		t.Errorf("expected the surviving finding to be the phoneme one, got %+v", sounds[0])
+	}
+}
+
+// TestSoundSimilarNeedsSharedRun guards the rule that a MED-band global phoneme
+// distance is only reported as "sound-similar" when the pair also shares a clean
+// run of sounds. These four pairs land in the MED band globally (~0.20–0.24) but
+// share no clean run — diffuse, coincidental partial-feature overlap, not a radio
+// confusion risk — so no sound finding should survive.
+func TestSoundSimilarNeedsSharedRun(t *testing.T) {
+	if !phonetic.PhonemesAvailable() {
+		t.Skip("espeak-ng not installed; the shared-run gate needs the phoneme engine")
+	}
+	if s := soundIssues(checkPair("Tulsa", "Dispatch")); len(s) != 0 {
+		t.Errorf("Tulsa/Dispatch should produce no sound finding, got %+v", s)
+	}
+	if s := soundIssues(checkPair("Tulsa", "Minty")); len(s) != 0 {
+		t.Errorf("Tulsa/Minty should produce no sound finding, got %+v", s)
+	}
+	if s := soundIssues(checkPair("NullSet", "Ramsey")); len(s) != 0 {
+		t.Errorf("NullSet/Ramsey should produce no sound finding, got %+v", s)
+	}
+	if s := soundIssues(checkPair("HawkEye", "Fowler")); len(s) != 0 {
+		t.Errorf("HawkEye/Fowler should produce no sound finding, got %+v", s)
+	}
+}
+
+// TestSoundSimilarKeepsRealCatches is the other half of the shared-run gate: pairs
+// that genuinely sound similar share a clean run, so they must still be flagged
+// MEDIUM sound-similar by the phoneme engine. Gild/Gold (vowel-only difference),
+// Blaze/Belize, and Thunder/Plunder all sit in the MED band with a clean overlap.
+func TestSoundSimilarKeepsRealCatches(t *testing.T) {
+	if !phonetic.PhonemesAvailable() {
+		t.Skip("espeak-ng not installed; the shared-run gate needs the phoneme engine")
+	}
+	hasPhonemeSimilar := func(issues []Issue) bool {
+		for _, is := range issues {
+			if is.Kind == "sound-similar" && is.Severity == SevMedium &&
+				strings.Contains(is.Detail, "espeak-ng") {
+				return true
+			}
+		}
+		return false
+	}
+	if !hasPhonemeSimilar(checkPair("Gild", "Gold")) {
+		t.Errorf("Gild/Gold should still be MEDIUM sound-similar, got %+v", soundIssues(checkPair("Gild", "Gold")))
+	}
+	if !hasPhonemeSimilar(checkPair("Blaze", "Belize")) {
+		t.Errorf("Blaze/Belize should still be MEDIUM sound-similar, got %+v", soundIssues(checkPair("Blaze", "Belize")))
+	}
+	if !hasPhonemeSimilar(checkPair("Thunder", "Plunder")) {
+		t.Errorf("Thunder/Plunder should still be MEDIUM sound-similar, got %+v", soundIssues(checkPair("Thunder", "Plunder")))
+	}
+}
+
+// severitySet collects the distinct severities present in a slice of issues.
+func severitySet(issues []Issue) map[Severity]bool {
+	s := make(map[Severity]bool)
+	for _, is := range issues {
+		s[is.Severity] = true
+	}
+	return s
+}
+
+// firedSeveritySet collects the distinct severities of the checks ExplainPair
+// reports as fired.
+func firedSeveritySet(exps []CheckExplanation) map[Severity]bool {
+	s := make(map[Severity]bool)
+	for _, e := range exps {
+		if e.Fired {
+			s[e.Severity] = true
+		}
+	}
+	return s
+}
+
+// assertExplainConsistent checks that ExplainPair's fired verdicts agree with the
+// real findings from checkPair: the same set of severities, and fired iff there
+// are findings. (Severities are compared as a set, not a count, because checkPair
+// may emit several issues — e.g. one per shared word — that ExplainPair groups
+// into a single check.) This is the guard that keeps the two from drifting.
+func assertExplainConsistent(t *testing.T, a, b string) {
+	t.Helper()
+	issues := checkPair(a, b)
+	exps := ExplainPair(a, b)
+	want, got := severitySet(issues), firedSeveritySet(exps)
+	if len(want) != len(got) {
+		t.Errorf("ExplainPair(%q,%q) fired severities %v, checkPair issues had %v", a, b, got, want)
+		return
+	}
+	for sev := range want {
+		if !got[sev] {
+			t.Errorf("ExplainPair(%q,%q) missing fired severity %s present in checkPair", a, b, sev)
+		}
+	}
+	if (len(issues) > 0) != (len(got) > 0) {
+		t.Errorf("ExplainPair(%q,%q): fired=%v but checkPair had %d issues", a, b, len(got) > 0, len(issues))
+	}
+}
+
+// TestExplainMatchesCheckPair guards that ExplainPair stays in lockstep with
+// checkPair across a spread of pairs: a clean non-match, a shared word, a strong
+// sound match, a single-letter edit, a homoglyph look-alike, a rhyme, and an
+// identical pair.
+func TestExplainMatchesCheckPair(t *testing.T) {
+	assertExplainConsistent(t, "Brightside", "Zye Zye")
+	assertExplainConsistent(t, "GoldWing", "GoldBar")
+	assertExplainConsistent(t, "Gold", "Cold")
+	assertExplainConsistent(t, "Gold", "Bold")
+	assertExplainConsistent(t, "G0LD", "GOLD")
+	assertExplainConsistent(t, "Thunder", "Plunder")
+	assertExplainConsistent(t, "GoldWing", "goldwing")
+	assertExplainConsistent(t, "CCS", "CCEssay")      // phonetic containment (HIGH)
+	assertExplainConsistent(t, "Ranger", "Stranger")  // spelled substring suppresses sound-substring
+	assertExplainConsistent(t, "DustyDog", "ADustyLog") // near-miss, not containment
+}
+
+// TestExplainSilentPair captures the motivating case: Brightside and Zye Zye
+// share only a vowel melody, which no check models, so every check stays silent.
+func TestExplainSilentPair(t *testing.T) {
+	if !phonetic.PhonemesAvailable() {
+		t.Skip("espeak-ng not installed; the sound checks are on the Metaphone fallback")
+	}
+	for _, e := range ExplainPair("Brightside", "Zye Zye") {
+		if e.Fired {
+			t.Errorf("expected no fired check for Brightside/Zye Zye, got %s: %s", e.Name, e.Detail)
+		}
+	}
+}
+
+// TestExplainReportsSilentReason checks that a silent check still explains itself:
+// GoldWing/GoldBar do not match phonetically, and that check should say so with
+// its measured distance rather than be omitted.
+func TestExplainReportsSilentReason(t *testing.T) {
+	if !phonetic.PhonemesAvailable() {
+		t.Skip("espeak-ng not installed; the phoneme distance check is on the fallback")
+	}
+	var found bool
+	for _, e := range ExplainPair("GoldWing", "GoldBar") {
+		if strings.HasPrefix(e.Name, "phoneme distance") {
+			found = true
+			if e.Fired {
+				t.Errorf("GoldWing/GoldBar should not fire on phoneme distance, got %+v", e)
+			}
+			if !strings.Contains(e.Detail, "distance") {
+				t.Errorf("silent phoneme check should report its measured distance, got %q", e.Detail)
+			}
+		}
+	}
+	if !found {
+		t.Error("ExplainPair did not include a phoneme distance check")
+	}
+}
+
+// TestSoundSubstring covers the phonetic-containment check: a short callsign
+// whose whole pronunciation is heard at the start of a longer one, even though
+// the two are spelled completely differently. "CCS" voices as "see-see-ess",
+// which is exactly the front of "CCEssay" ("see-see-ess-ay"), yet they normalize
+// to "seeseeess" / "ccessay", so the written substring check can't see it.
+func TestSoundSubstring(t *testing.T) {
+	if !phonetic.PhonemesAvailable() {
+		t.Skip("espeak-ng not installed; phonetic containment needs the phoneme engine")
+	}
+	is := checkPair("CCS", "CCEssay")
+	if !hasKindSev(is, "sound-substring", SevHigh) {
+		t.Errorf("expected a HIGH sound-substring for CCS/CCEssay, got %+v", soundIssues(is))
+	}
+	// The weaker MEDIUM sound-similar must not also fire — containment stands in
+	// for the global-distance finding.
+	for _, i := range is {
+		if i.Kind == "sound-similar" {
+			t.Errorf("sound-substring should suppress the MEDIUM sound-similar, got %+v", i)
+		}
+	}
+}
+
+// TestSoundSubstringSuppressedBySpelling checks that when the spelled substring
+// check already flags the containment (same spelling, e.g. "Ranger" inside
+// "Stranger"), the phonetic one does not pile on a redundant second HIGH.
+func TestSoundSubstringSuppressedBySpelling(t *testing.T) {
+	if !phonetic.PhonemesAvailable() {
+		t.Skip("espeak-ng not installed; phonetic containment needs the phoneme engine")
+	}
+	is := checkPair("Ranger", "Stranger")
+	if !hasKind(is, "substring") {
+		t.Fatalf("expected the spelled substring to fire for Ranger/Stranger, got %+v", is)
+	}
+	if hasKind(is, "sound-substring") {
+		t.Errorf("phonetic containment should be suppressed when the spelled substring already fired, got %+v", soundIssues(is))
+	}
+}
+
+// TestSoundSubstringRejectsNearMiss guards the distance bar: "DustyDog" and
+// "ADustyLog" share a whole run at an edge, but the "Dog"/"Log" tail makes it a
+// near-miss (~0.075), above containMaxDist, so it must NOT be called containment.
+func TestSoundSubstringRejectsNearMiss(t *testing.T) {
+	if !phonetic.PhonemesAvailable() {
+		t.Skip("espeak-ng not installed; phonetic containment needs the phoneme engine")
+	}
+	if hasKind(checkPair("DustyDog", "ADustyLog"), "sound-substring") {
+		t.Errorf("DustyDog/ADustyLog is a near-miss tail, not containment, got %+v", soundIssues(checkPair("DustyDog", "ADustyLog")))
 	}
 }
 
@@ -373,11 +583,46 @@ func TestTokens(t *testing.T) {
 	}
 }
 
+// TestTokensAcronymSplit covers peeling an acronym off the front of a glued word:
+// the run's last capital is the following word's onset, but only when >= 2
+// capitals precede it.
+func TestTokensAcronymSplit(t *testing.T) {
+	assertTokens := func(s string, want ...string) {
+		t.Helper()
+		got := tokens(s)
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("tokens(%q) = %v, want %v", s, got, want)
+		}
+	}
+	// >= 2 leading capitals: split the acronym from the word.
+	assertTokens("DMVGuy", "dmv", "guy")
+	assertTokens("USBKey", "usb", "key")
+	assertTokens("TVStation", "tv", "station")
+	// Single leading capital is ambiguous (could be a name) — left glued.
+	assertTokens("GBush", "gbush")
+	assertTokens("XRay", "xray")
+	// Ordinary camelCase and single-capital words are unaffected.
+	assertTokens("GoldWing", "gold", "wing")
+	assertTokens("Awesome", "awesome")
+	// A pure acronym with no trailing word stays one token.
+	assertTokens("DMV", "dmv")
+	// A split acronym still camelCases the rest: "DMV" + "Guy" + "Dude".
+	assertTokens("DMVGuyDude", "dmv", "guy", "dude")
+}
+
+// TestSharedWordGluedAcronym is the payoff: the shared-word check now sees a
+// component shared between two glued handles (here the "DMV" acronym).
+func TestSharedWordGluedAcronym(t *testing.T) {
+	if !hasKind(checkPair("DMVGuy", "DMVDude"), "shared-word") {
+		t.Error("expected a shared-word finding for DMVGuy/DMVDude (both contain DMV)")
+	}
+}
+
 func TestExpandInitialisms(t *testing.T) {
 	// Separator-delimited single letters and fully-uppercase tokens are spelled
 	// out as they are read aloud.
-	if got := expandInitialisms("S A"); got != "Ess Ay" {
-		t.Errorf(`expandInitialisms("S A") = %q, want "Ess Ay"`, got)
+	if got := expandInitialisms("S A"); got != "Ess Eigh" {
+		t.Errorf(`expandInitialisms("S A") = %q, want "Ess Eigh"`, got)
 	}
 	if got := expandInitialisms("LL"); got != "ElEl" {
 		t.Errorf(`expandInitialisms("LL") = %q, want "ElEl"`, got)

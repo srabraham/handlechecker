@@ -91,7 +91,10 @@ budget, so only actual guesses are rate-limited. See `auth.go`.
 
 CLI flags: `--min` (minimum severity to print, default `info`), `--fail-on`
 (exit non-zero at this severity or above, default `high`, `never` to always exit
-0), `--no-color`.
+0), `--no-color`, `--debug` (print each callsign's phonemes to stderr), and
+`--explain` (diagnostic mode: takes exactly two callsigns and prints what every
+individual check concluded — fired with its severity, or silent with the metric
+and threshold that kept it silent — answering "why do/don't these two match?").
 
 ## Architecture
 
@@ -137,12 +140,19 @@ binaries consume `checker`:
   one-vs-many variant the web app uses (candidate alone plus candidate against
   each baseline term, never baseline-vs-baseline; candidate is always `A`). Every finding is an `Issue{A, B, Severity, Kind,
   Detail}` — `B` empty for single-callsign findings. Severities are an ordered
-  enum `SevInfo < SevLow < SevMedium < SevHigh < SevCritical`. Spelling/sight
+  enum `SevInfo < SevLow < SevMedium < SevHigh < SevCritical`.
+  `ExplainPair(a, b)` (in `explain.go`, behind the CLI's `--explain`) is a
+  diagnostic that returns every pairwise check's verdict — fired or silent, with
+  the metric and threshold either way. It deliberately mirrors `checkPair` step
+  for step and reuses the same threshold constants and suppression rules, so the
+  two must be kept in lockstep; `TestExplainMatchesCheckPair` asserts they agree
+  (same set of fired severities as `checkPair`'s issues) and will fail on drift.
+  Spelling/sight
   helpers live alongside: `nato.go` (decompose a name into NATO alphabet words),
   `written.go` (homoglyph folding for written-roster look-alikes), `digits.go`
   (`expandDigits` reads a digit as its spoken word, "Dog4" -> "DogFour"),
   `initialisms.go` (`expandInitialisms` spells an all-caps letter run as its
-  spoken letter names, "S A" -> "Ess Ay", "USB Key" -> "You Ess Bee Key", so a
+  spoken letter names, "S A" -> "Ess Eigh", "USB Key" -> "You Ess Bee Key", so a
   spelled-out callsign is analyzed the way it is read aloud — see "Spoken form"
   below), the `levenshtein`/`tokens` helpers in `checker.go`, `profanity.go`
   (`checkProfanity`: a per-callsign CRITICAL check for callsigns that contain or
@@ -173,6 +183,17 @@ binaries consume `checker`:
   `expandDigits` only** — these are over-eager safety checks, so spelling out
   must not let an all-caps handle evade them ("SHIT" must still read "shit", not
   "Ess Aitch Eye Tee"; "MAYDAY" must still match the emergency word).
+
+  The *spoken* form leaves a glued acronym+word verbatim, but the **written-roster
+  tokenizer** (`tokens` in `checker.go`, used by the shared-word, profanity, and
+  proword checks) does split one: an all-uppercase run followed by a lowercase
+  letter is peeled into acronym + word ("DMVGuy" -> `dmv`, `guy`; "USBKey" ->
+  `usb`, `key`), but only when **at least two** capitals precede the word's onset,
+  so a lone leading capital ("GBush", which might be a name) stays glued. This
+  decomposition is safe on the written side (it never feeds espeak-ng, which
+  already voices the glued forms correctly — even true acronyms like "NASA"), and
+  it lets the shared-word/proword/profanity checks see a component buried in a
+  PascalCase handle. See `tokens` and `TestTokensAcronymSplit`.
 
 - **`internal/phonetic`** — all sound and prosody comparison. This is the heart
   of the tool and has **two interchangeable sound engines**:
@@ -213,15 +234,36 @@ binaries consume `checker`:
   sequence-final voiceless stop (e.g. the "t" of "Set") less than a full indel,
   since a trailing stop is perceptually faint on the air — so "NullSet"/"Tulsa"
   scores closer (0.10, not 0.20) without dragging the "clearly different" pairs
-  into range.
+  into range. A MED-band global distance is additionally gated on a clean shared
+  run (`similarOverlapMax`, via `PhoneticOverlap`): a moderate distance with no
+  contiguous run in common is diffuse coincidental overlap, not a real conflict
+  ("Tulsa"/"Minty", "HawkEye"/"Fowler" — globally in-band but no shared run — are
+  suppressed, while Gold/Gild, Blaze/Belize, Thunder/Plunder keep their run and
+  stay flagged).
+
+- **Phonetic containment is the spoken analogue of the written substring check.**
+  `phonetic.PhoneticContainment` flags HIGH "sound-substring" when one callsign's
+  whole pronunciation is heard at the **start or end** of the other's, even when
+  the spellings share nothing ("CCS" voices as "see-see-ess", exactly the front of
+  "CCEssay" — but they normalize to `seeseeess`/`ccessay`, so the spelled
+  `substring` check can't see it). It judges the edge by the **worst** per-phoneme
+  feature distance, *not* an average, so a single substituted sound can't be
+  diluted across the run — that is what keeps "Thunder"/"Plunder" (onset differs)
+  and "DustyDog"/"ADustyLog" (Dog/Log tail) out (both ~0.20, above
+  `containMaxDist` 0.06), while exact containments score 0.00. Edges only: a
+  sequence buried in the interior is walled off and not confusable. When it fires
+  it takes precedence over the global-distance finding, and it is suppressed when
+  the spelled `substring` check already caught the same pair ("Ranger"/"Stranger").
 
 ### Avoiding duplicate findings
 
 `checkPair` deliberately suppresses weaker findings already explained by a
-stronger one: a reported rhyme suppresses the raw common-suffix finding, a strong
-phonetic match (`strongSound`) suppresses rhyme/suffix, and a shared whole-word
-token (`explainsAffix`) suppresses the common-prefix/suffix findings. Preserve
-this layering when adding checks so the output stays non-redundant.
+stronger one: phonetic containment (HIGH "sound-substring") stands in for the
+global-distance finding and is itself suppressed by the spelled `substring` check;
+a reported rhyme suppresses the raw common-suffix finding; a strong phonetic match
+(`strongSound`) suppresses rhyme/suffix; and a shared whole-word token
+(`explainsAffix`) suppresses the common-prefix/suffix findings. Preserve this
+layering when adding checks so the output stays non-redundant.
 
 ## Requirements
 

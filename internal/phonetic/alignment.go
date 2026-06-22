@@ -23,6 +23,58 @@ func swScore(x, y string) float64 {
 	return swMatch * (1 - 2*featureDistance(x, y))
 }
 
+// PhoneticContainment measures whether one callsign's entire pronunciation is
+// heard, intact, at the start or end of the other's — the spoken analogue of a
+// written substring ("Ranger" inside "Stranger", "CCS" at the front of "CCEssay"
+// where the spellings share nothing). It returns the distance of the cleaner of
+// the two edges (prefix or suffix) at which the shorter sequence sits inside the
+// longer: 0 when the shorter is heard exactly, larger as boundary phonemes
+// diverge. Crucially this is the *worst* per-phoneme difference, not an average,
+// so a single substituted sound ("Thunder" vs "Plunder", "Dog" vs "Log") keeps
+// the distance high rather than diluting it across the run — the caller's small
+// threshold then rejects it. Equal-length pairs return 1 (they are sound-alikes,
+// handled by PhoneticDistance, not containment). ok is false when espeak-ng is
+// unavailable.
+func PhoneticContainment(a, b string) (dist float64, ok bool) {
+	pa, err := phonemize(a)
+	if err != nil || len(pa) == 0 {
+		return 1, false
+	}
+	pb, err := phonemize(b)
+	if err != nil || len(pb) == 0 {
+		return 1, false
+	}
+	return phonemeContainment(pa, pb), true
+}
+
+// phonemeContainment returns the smaller of the prefix and suffix worst-per-
+// phoneme distances of the shorter sequence against the longer. Only the edges
+// are considered: a sequence buried in the interior of the other is walled off by
+// surrounding sounds and is not confusable. 1 means no clean edge (or equal
+// length).
+func phonemeContainment(pa, pb []string) float64 {
+	if len(pa) == len(pb) {
+		return 1 // equal length: a sound-alike, not containment
+	}
+	short, long := pa, pb
+	if len(pb) < len(pa) {
+		short, long = pb, pa
+	}
+	prefix, suffix := 0.0, 0.0
+	for k := range short {
+		if d := featureDistance(short[k], long[k]); d > prefix {
+			prefix = d
+		}
+		if d := featureDistance(short[len(short)-1-k], long[len(long)-1-k]); d > suffix {
+			suffix = d
+		}
+	}
+	if suffix < prefix {
+		return suffix
+	}
+	return prefix
+}
+
 // PhoneticOverlap finds the best-matching contiguous run of sounds shared by a
 // and b via local alignment of their phoneme sequences. It returns the number
 // of syllables (vowels) that run spans and a normalized 0..1 distance measuring

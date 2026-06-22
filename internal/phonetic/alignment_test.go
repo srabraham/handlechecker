@@ -62,6 +62,61 @@ func TestPhonemeOverlap(t *testing.T) {
 	}
 }
 
+// TestPhonemeContainment exercises the containment core on phoneme tokens (no
+// espeak-ng needed): one whole sequence heard at an edge of a strictly-longer
+// one counts; equal-length, near-miss tails, and partial overlaps do not.
+func TestPhonemeContainment(t *testing.T) {
+	// "CCS" -> s iː s iː E s ; "CCEssay" -> s iː s iː E s eɪ. The whole of CCS is
+	// the front of CCEssay, perfectly.
+	ccs := []string{"s", "i:", "s", "i:", "E", "s"}
+	ccessay := []string{"s", "i:", "s", "i:", "E", "s", "eI"}
+	if d := phonemeContainment(ccs, ccessay); d > 0.01 {
+		t.Errorf("CCS should be contained at the front of CCEssay, got dist=%.3f", d)
+	}
+	// Order shouldn't matter.
+	if d := phonemeContainment(ccessay, ccs); d > 0.01 {
+		t.Errorf("containment should be symmetric in argument order, got dist=%.3f", d)
+	}
+
+	// "Ranger" whole at the END of "Stranger" — containment.
+	ranger := []string{"r", "eI", "n", "dZ", "@"}
+	stranger := []string{"s", "t", "r", "eI", "n", "dZ", "@"}
+	if d := phonemeContainment(ranger, stranger); d > 0.01 {
+		t.Errorf("Ranger should be contained at the end of Stranger, got dist=%.3f", d)
+	}
+
+	// "DustyDog" vs "ADustyLog": the whole of DustyDog aligns at the tail of
+	// ADustyLog, but the Dog/Log substitution is a full per-phoneme difference, so
+	// the worst-per-phoneme distance stays well above the caller's 0.06 bar.
+	dustyDog := []string{"d", "V", "s", "t", "I", "d", "Q", "g"}
+	aDustyLog := []string{"@", "d", "V", "s", "t", "I", "l", "Q", "g"}
+	if d := phonemeContainment(dustyDog, aDustyLog); d <= 0.06 {
+		t.Errorf("DustyDog/ADustyLog tail is a near-miss, not clean containment, got dist=%.3f", d)
+	}
+
+	// "Thunder" vs "Plunder" differ only in the onset, but that single substitution
+	// must not be diluted away — they are not containment.
+	thunder := []string{"T", "V", "n", "d", "3"}
+	plunder := []string{"p", "l", "V", "n", "d", "3"}
+	if d := phonemeContainment(thunder, plunder); d <= 0.06 {
+		t.Errorf("Thunder/Plunder differ at the onset and are not containment, got dist=%.3f", d)
+	}
+
+	// Equal-length near-identical pair is a sound-alike, never containment.
+	knight := []string{"n", "aI", "t"}
+	nite := []string{"n", "aI", "t"}
+	if d := phonemeContainment(knight, nite); d <= 0.06 {
+		t.Errorf("equal-length pairs must not be reported as containment, got dist=%.3f", d)
+	}
+
+	// Buried interior fragment (Random inside Frankenstein) is not at an edge.
+	frankenstein := []string{"f", "r", "a", "N", "k", "@", "n", "s", "t", "aI", "n"}
+	random := []string{"r", "a", "n", "d", "@", "m"}
+	if d := phonemeContainment(frankenstein, random); d <= 0.06 {
+		t.Errorf("Random is buried mid-word in Frankenstein and is not containment, got dist=%.3f", d)
+	}
+}
+
 // TestPhoneticOverlapEspeak is the case we most care about: with espeak-ng
 // present, a shared multi-syllable core is detected end-to-end even when the
 // callsigns differ at the edges.

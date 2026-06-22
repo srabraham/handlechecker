@@ -6,8 +6,13 @@ import "strings"
 // "spell it out" pronunciation an operator uses for an initialism ("FBI" ->
 // "ef bee eye"). Each name is Title-cased and free of internal capitals so that
 // the camelCase tokenizer treats one spelled letter as one word token.
+// 'A' is spelled "Eigh" (the /eɪ/ of weigh/sleigh), not the natural-looking
+// "Ay": espeak-ng reads the token "Ay" as the exclamation /aɪ/ (rhyming with
+// "Guy"), which made "S A" wrongly rhyme with "HotGuy". "Eigh" reads as the
+// letter name /eɪ/ both alone and glued into a run (the bare letter "A" would
+// reduce to a schwa when glued to a following letter, e.g. "AB").
 var letterNames = map[rune]string{
-	'A': "Ay", 'B': "Bee", 'C': "See", 'D': "Dee", 'E': "Ee", 'F': "Ef",
+	'A': "Eigh", 'B': "Bee", 'C': "See", 'D': "Dee", 'E': "Ee", 'F': "Ef",
 	'G': "Gee", 'H': "Aitch", 'I': "Eye", 'J': "Jay", 'K': "Kay", 'L': "El",
 	'M': "Em", 'N': "En", 'O': "Oh", 'P': "Pee", 'Q': "Cue", 'R': "Ar",
 	'S': "Ess", 'T': "Tee", 'U': "You", 'V': "Vee", 'W': "Doubleyou",
@@ -16,7 +21,7 @@ var letterNames = map[rune]string{
 
 // expandInitialisms rewrites all-caps letter runs as their spoken letter names,
 // so that a callsign meant to be spelled out is analyzed the way it is read
-// aloud: "S A" -> "Ess Ay", "USB Key" -> "You Ess Bee Key". This is what keeps
+// aloud: "S A" -> "Ess Eigh", "USB Key" -> "You Ess Bee Key". This is what keeps
 // "S A" from being treated as the syllable "sa" (and matching the "-sa" in
 // "Tulsa"); on the air it is "ess ay".
 //
@@ -68,7 +73,7 @@ func expandInitialisms(s string) string {
 
 // spokenForm renders a callsign the way it is read aloud for the sound- and
 // spelling-based checks: initialisms spelled out, then digits read as words.
-// "K9" -> "KayNine", "S A" -> "EssAy", "Dog4" -> "DogFour".
+// "K9" -> "KayNine", "S A" -> "EssEigh", "Dog4" -> "DogFour".
 func spokenForm(s string) string {
 	return expandDigits(expandInitialisms(s))
 }

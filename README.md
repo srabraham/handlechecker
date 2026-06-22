@@ -77,9 +77,19 @@ Per pair:
 | `--min` | `info` | Minimum severity to print (`info`/`low`/`medium`/`high`/`critical`). |
 | `--fail-on` | `high` | Exit non-zero if any issue at this severity or above is found (`never` to always exit 0). |
 | `--no-color` | `false` | Disable ANSI colors. |
+| `--debug` | `false` | Print each callsign's phonemes to stderr. |
+| `--explain` | `false` | Diagnose exactly two callsigns: print what every check concluded. |
 
 The non-zero exit on `--fail-on` makes it easy to gate a callsign roster in a
 script or CI check.
+
+`--explain` takes exactly two callsigns and prints a per-check breakdown — each
+check fired (with its severity) or silent (with the metric and threshold that
+kept it quiet) — so you can see *why* a pair does or doesn't match:
+
+```sh
+handlecheckercli --explain Brightside "Zye Zye"
+```
 
 ## How "sounds alike" works
 

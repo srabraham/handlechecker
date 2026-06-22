@@ -29,9 +29,11 @@ func run() int {
 		failOn  = flag.String("fail-on", "high", "exit non-zero if any issue at this severity or above is found (or 'never')")
 		noColor = flag.Bool("no-color", false, "disable colored output")
 		debug   = flag.Bool("debug", false, "print the phonemes used for each callsign (to stderr)")
+		explain = flag.Bool("explain", false, "diagnose exactly two callsigns: report what each individual check concluded, fired or not")
 	)
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [flags] CALLSIGN [CALLSIGN ...]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s [flags] CALLSIGN [CALLSIGN ...]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "       %s --explain [flags] CALLSIGN_A CALLSIGN_B\n\n", os.Args[0])
 		fmt.Fprintln(os.Stderr, "Checks proposed radio callsigns for confusability (spelling, sight, and sound).")
 		fmt.Fprintln(os.Stderr, "\nFlags:")
 		flag.PrintDefaults()
@@ -42,6 +44,17 @@ func run() int {
 	if len(callsigns) == 0 {
 		flag.Usage()
 		return 2
+	}
+
+	color := !*noColor && isTerminal(os.Stdout)
+
+	if *explain {
+		if len(callsigns) != 2 {
+			fmt.Fprintf(os.Stderr, "--explain needs exactly two callsigns, got %d\n", len(callsigns))
+			return 2
+		}
+		printExplain(callsigns[0], callsigns[1], color)
+		return 0
 	}
 
 	minLevel, ok := parseSeverity(*minSev)
@@ -56,8 +69,6 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "invalid --fail-on value %q\n", *failOn)
 		return 2
 	}
-
-	color := !*noColor && isTerminal(os.Stdout)
 
 	if *debug {
 		printPhonemeDebug(callsigns)
@@ -114,6 +125,70 @@ func printPhonemeDebug(callsigns []string) {
 		fmt.Fprintf(os.Stderr, "  %-24s %s\n", name, phon)
 	}
 	fmt.Fprintln(os.Stderr)
+}
+
+// printExplain runs every pairwise check on the two callsigns and prints what
+// each one concluded — fired (with its severity) or silent (with why) — so a
+// non-match can be understood, not just trusted.
+func printExplain(a, b string, color bool) {
+	fmt.Printf("Explaining %s vs %s\n\n", bold(color, a), bold(color, b))
+
+	if checker.PhonemesAvailable() {
+		for _, d := range checker.DebugPhonemes([]string{a, b}) {
+			name := d.Callsign
+			if d.Spoken != d.Callsign {
+				name = fmt.Sprintf("%s → %s", d.Callsign, d.Spoken)
+			}
+			phon := strings.Join(d.Phonemes, " ")
+			if phon == "" {
+				phon = "(no phonemes)"
+			}
+			fmt.Printf("  %-26s [%s]\n", name, phon)
+		}
+	} else {
+		fmt.Println("  (espeak-ng not installed — sound checks use the Metaphone 3 fallback)")
+	}
+	fmt.Println()
+
+	exps := checker.ExplainPair(a, b)
+	nameW := 0
+	for _, e := range exps {
+		if len(e.Name) > nameW {
+			nameW = len(e.Name)
+		}
+	}
+
+	fired := 0
+	worst := checker.SevInfo
+	for _, e := range exps {
+		var tag string
+		if e.Fired {
+			fired++
+			if e.Severity > worst {
+				worst = e.Severity
+			}
+			plain := fmt.Sprintf("[%s]", e.Severity)
+			tag = plain
+			if color {
+				tag = colorize(e.Severity, plain)
+			}
+			tag += strings.Repeat(" ", max(0, 10-len(plain)))
+		} else {
+			dash := "    —     "
+			if color {
+				dash = ansiGray + dash + ansiReset
+			}
+			tag = dash
+		}
+		fmt.Printf("%s%-*s  %s\n", tag, nameW, e.Name, e.Detail)
+	}
+
+	fmt.Println()
+	if fired == 0 {
+		fmt.Println("No check flagged this pair.")
+	} else {
+		fmt.Printf("%d check(s) flagged this pair; most severe: %s.\n", fired, worst)
+	}
 }
 
 func printIssue(is checker.Issue, color bool) {
