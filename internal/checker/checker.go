@@ -167,13 +167,33 @@ const (
 // A shared run of sounds (local alignment) is flagged when it spans at least
 // this many syllables and matches at least this cleanly (normalized distance
 // within the run). This catches pairs whose global distance looks safe only
-// because they differ at the edges, e.g. "DustyDog" / "ADustyLog". PhoneticOverlap
-// additionally requires the run to contain a whole word on one side, so an
-// interior-only match (e.g. "Abraham" / "Zebra" sharing "-bra-") does not count.
+// because they differ at the edges, e.g. "DustyDog" / "ADustyLog" — whose shared
+// "Dust-y-Dog"/"Dust-y-Log" run is three syllables. PhoneticOverlap additionally
+// requires the run to contain a whole word on one side, so an interior-only match
+// (e.g. "Abraham" / "Zebra" sharing "-bra-") does not count.
+//
+// The floor is 3, not 2, on purpose. A two-syllable run is too short to be a
+// reliable signal here: short words that merely share a liquid+vowel skeleton
+// align cleanly enough to slip under overlapMaxDist (e.g. "Tulsa" vs the "Delta"
+// of "Delta Victor" at 0.07 — a global-safe pair this is the *only* check to
+// flag), yet they are not confusable on the air. Tightening overlapMaxDist can't
+// fix that: those false positives score *lower* (cleaner) than the genuine
+// three-syllable catches. The two-syllable matches worth keeping are already
+// caught by the edit-distance, substring, or global-phoneme checks, so raising
+// the floor sheds the noise without losing real conflicts.
 const (
-	overlapMinSyllables = 2
+	overlapMinSyllables = 3
 	overlapMaxDist      = 0.12
 )
+
+// A rhyme is promoted from a bare LOW finding to a MEDIUM "sound-similar" one
+// when the two callsigns also share an opening this closely (normalized onset-
+// consonant distance, see phonetic.SharedOpening). Sharing both ends — opening
+// and rhyme — leaves only the middle to tell them apart, which the ear easily
+// misses even when the whole-word distance looks safe. The bar is near-identical:
+// it admits a shared /h/ ("Hot Guy"/"HawkEye", 0.00) but not a merely close onset
+// like /m/ vs /b/ ("Monsoon"/"Balloon", 0.13), which only coincidentally rhymes.
+const openingMaxDist = 0.10
 
 // metaphoneSound returns the strongest Metaphone-3 sound finding for the pair,
 // with ok=false if none. Buckets mirror the phoneme-distance ones: a matching
@@ -306,7 +326,19 @@ func checkPair(a, b string) []Issue {
 	ra, rb := phonetic.Rhyme(sa), phonetic.Rhyme(sb)
 	rhyme := !strongSound && ra != "" && ra == rb && len(ra) >= 2
 	if rhyme {
-		add(SevLow, "rhyme", fmt.Sprintf("rhyme (both end with the %q sound)", ra))
+		// A rhyme paired with a matching opening (the same onset consonant) means
+		// the callsigns are alike at both ends with only the middle differing —
+		// confusable on the air even when the whole-word phoneme distance looks safe
+		// because one carries an extra interior consonant (e.g. "Hot Guy"/"HawkEye",
+		// inflated by the /g/ of "Guy"). Promote those to sound-similar (MEDIUM); a
+		// rhyme with a different opening stays a bare rhyme (LOW). When espeak-ng is
+		// unavailable SharedOpening reports ok=false and the finding stays LOW.
+		if od, ok := phonetic.SharedOpening(sa, sb); ok && od <= openingMaxDist {
+			add(SevMedium, "sound-similar", fmt.Sprintf(
+				"open alike and rhyme (both end with the %q sound); easily confused on the air", ra))
+		} else {
+			add(SevLow, "rhyme", fmt.Sprintf("rhyme (both end with the %q sound)", ra))
+		}
 	}
 
 	// Shared trailing letters, when not already explained by a shared word or

@@ -127,6 +127,36 @@ func TestRhyme(t *testing.T) {
 	}
 }
 
+// A rhyme whose openings also match (same onset consonant) is promoted from a
+// bare LOW rhyme to a MEDIUM sound-similar finding; a rhyme with a different
+// opening stays a plain rhyme. Needs espeak-ng for the opening comparison.
+func TestRhymeOpeningPromotion(t *testing.T) {
+	if !phonetic.PhonemesAvailable() {
+		t.Skip("espeak-ng not installed; the opening comparison needs the phoneme engine")
+	}
+
+	// "Hot Guy" / "HawkEye": both open on /h/ and rhyme on "-y". Their whole-word
+	// distance is safe only because "Guy" carries an extra /g/, so this promotion
+	// is the finding that catches them.
+	hotGuy := checkPair("Hot Guy", "HawkEye")
+	if !hasKind(hotGuy, "sound-similar") {
+		t.Errorf("expected sound-similar for Hot Guy/HawkEye, got %+v", hotGuy)
+	}
+	if hasKind(hotGuy, "rhyme") {
+		t.Errorf("Hot Guy/HawkEye should be promoted past a bare rhyme, got %+v", hotGuy)
+	}
+
+	// "Monsoon" / "Balloon" rhyme on "-oon" but open differently (/m/ vs /b/), so
+	// they stay a plain rhyme and are not called sound-similar by this path.
+	monsoon := checkPair("Monsoon", "Balloon")
+	if !hasKind(monsoon, "rhyme") {
+		t.Errorf("expected a bare rhyme for Monsoon/Balloon, got %+v", monsoon)
+	}
+	if hasKind(monsoon, "sound-similar") {
+		t.Errorf("Monsoon/Balloon open differently and should not be sound-similar, got %+v", monsoon)
+	}
+}
+
 func TestSyllableBounds(t *testing.T) {
 	if !hasKind(checkSingle("Gold"), "too-few-syllables") { // 1 syllable
 		t.Error("expected too-few-syllables for Gold")
