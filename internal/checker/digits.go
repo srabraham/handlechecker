@@ -59,7 +59,7 @@ type PhonemeDebug struct {
 func DebugPhonemes(callsigns []string) []PhonemeDebug {
 	out := make([]PhonemeDebug, 0, len(callsigns))
 	for _, c := range callsigns {
-		spoken := expandDigits(c)
+		spoken := spokenForm(c)
 		toks, _ := phonetic.Phonemes(spoken)
 		out = append(out, PhonemeDebug{Callsign: c, Spoken: spoken, Phonemes: toks})
 	}

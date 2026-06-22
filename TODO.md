@@ -2,6 +2,18 @@
 
 See `IMPROVEMENTS.md` for the broader prioritized critique and roadmap.
 
+- [ ] **Handle input & word segmentation.** `expandInitialisms`
+  (`internal/checker/initialisms.go`) spells out an all-caps run only when it is
+  *not* glued to a following lowercase word, so genuinely ambiguous glued forms
+  are left untouched: `USBKey` is read as one word, not "USB Key", and `GBush`
+  is not read as "Gee Bush". Resolving these needs to know where the word breaks
+  are, which the input doesn't currently carry. Think about how handles are
+  entered — e.g. let submitters mark spacing/segmentation explicitly (`USB Key`,
+  `Gold-Wing`), or add a smarter "acronym + TitleWord" tokenizer split
+  (`HTMLParser` → `HTML` + `Parser`) — and weigh its new failure modes
+  (`USBkey` → `US` + `Bkey`) before adopting it. Until then, glued mixed-case is
+  deliberately not guessed at.
+
 - [x] **Procedure-word / safety-word check.** Implemented in
   `internal/checker/prowords.go` (`checkProwords`, wired into `checkSingle`):
   flags callsigns that are or sound like a radio procedure word (Roger, Copy,

@@ -140,18 +140,39 @@ binaries consume `checker`:
   enum `SevInfo < SevLow < SevMedium < SevHigh < SevCritical`. Spelling/sight
   helpers live alongside: `nato.go` (decompose a name into NATO alphabet words),
   `written.go` (homoglyph folding for written-roster look-alikes), `digits.go`
-  (`expandDigits` reads a digit as its spoken word, "Dog4" -> "DogFour"), the
-  `levenshtein`/`tokens` helpers in `checker.go`, `profanity.go`
+  (`expandDigits` reads a digit as its spoken word, "Dog4" -> "DogFour"),
+  `initialisms.go` (`expandInitialisms` spells an all-caps letter run as its
+  spoken letter names, "S A" -> "Ess Ay", "USB Key" -> "You Ess Bee Key", so a
+  spelled-out callsign is analyzed the way it is read aloud — see "Spoken form"
+  below), the `levenshtein`/`tokens` helpers in `checker.go`, `profanity.go`
   (`checkProfanity`: a per-callsign CRITICAL check for callsigns that contain or
   sound like a swear word, with a Scunthorpe-style allowlist), and `prowords.go`
   (`checkProwords`: a per-callsign check flagging callsigns that are or sound
   like a radio procedure word — HIGH — or an emergency word — CRITICAL; matched
   per spoken token, with the distinctive words also matched as a substring of
   the glued handle so detection is independent of capitalization, e.g.
-  "Breakbreak"). `checkSingle`/`checkPair` run
-  the sound- and spelling-based checks on the digit-expanded form but keep the
-  raw form for the written-roster checks (`look-alike`, `confusable-chars`),
-  where the digit glyph itself is the concern.
+  "Breakbreak"). `checkSingle`/`checkPair` run the sound- and spelling-based
+  checks on the **spoken form** (`spokenForm` = `expandInitialisms` then
+  `expandDigits`) but keep the raw form for the written-roster checks
+  (`look-alike`, `confusable-chars`), where the literal glyph is the concern.
+
+  **Spoken form, and why initialisms vs profanity/prowords differ.**
+  `spokenForm` models how a handle is *said*: it spells out unambiguous
+  initialisms (so "S A" is "ess ay", not the syllable "sa" — which is why "S A"
+  is no longer reported as contained in "Tul·sa", and "LL" not in "Nul·lSet")
+  and then reads digits as words. An uppercase run is spelled out **unless it is
+  immediately followed by a lowercase letter**, in which case it is the onset of
+  an ordinary word and is left verbatim: "GoldWing", "GBush", and "USBKey" stay
+  glued and are *not* guessed at — only fully-uppercase tokens ("USB", "LL"),
+  separator-delimited letters ("S A"), and trailing/standalone capitals ("GoldX"
+  -> "GoldEx") expand. Initialisms are expanded *before* digits so a digit word
+  (Title-cased, e.g. "One") can't glue onto and mask an acronym run, and so a
+  lone letter beside a digit reads right ("R2D2" -> "ArTwoDeeTwo", "K9" ->
+  "KayNine"). The confusability checks (`checkSingle`, `checkPair`) use
+  `spokenForm`; **`profanity.go` and `prowords.go` deliberately stay on
+  `expandDigits` only** — these are over-eager safety checks, so spelling out
+  must not let an all-caps handle evade them ("SHIT" must still read "shit", not
+  "Ess Aitch Eye Tee"; "MAYDAY" must still match the emergency word).
 
 - **`internal/phonetic`** — all sound and prosody comparison. This is the heart
   of the tool and has **two interchangeable sound engines**:
@@ -183,11 +204,16 @@ binaries consume `checker`:
   test both with and without espeak-ng installed.
 
 - **Severity thresholds are tuned constants, not arbitrary.** The phoneme
-  HIGH/MED cutoffs (`phonemeHighMax`, `phonemeMedMax` in `checker.go`) and the
-  feature weights / `vowelWeight` in `phonemes.go`/`features.go` were hand-tuned
-  against a battery of real pronunciations (see comments citing Gold/Cold=0.02,
-  Gold/Gild=0.13). Changing them shifts which pairs get flagged HIGH vs MEDIUM —
-  re-validate against the test battery in `phonemes_test.go`.
+  HIGH/MED cutoffs (`phonemeHighMax`, `phonemeMedMax` in `checker.go`), the
+  feature weights / `vowelWeight`, and the `codaIndelCost` discount in
+  `phonemes.go`/`features.go` were hand-tuned against a battery of real
+  pronunciations (see comments citing Gold/Cold=0.02, Gold/Gild=0.13). Changing
+  them shifts which pairs get flagged HIGH vs MEDIUM — re-validate against the
+  test battery in `phonemes_test.go`. `codaIndelCost` charges an unpaired
+  sequence-final voiceless stop (e.g. the "t" of "Set") less than a full indel,
+  since a trailing stop is perceptually faint on the air — so "NullSet"/"Tulsa"
+  scores closer (0.10, not 0.20) without dragging the "clearly different" pairs
+  into range.
 
 ### Avoiding duplicate findings
 

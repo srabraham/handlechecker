@@ -108,9 +108,10 @@ func sortIssues(issues []Issue) {
 
 func checkSingle(c string) []Issue {
 	var issues []Issue
-	// Analyze the callsign as it is spoken, with digits read as words ("K9" ->
-	// "KNine"). The written-roster checks below still use the raw form c.
-	spoken := expandDigits(c)
+	// Analyze the callsign as it is spoken — initialisms spelled out and digits
+	// read as words ("K9" -> "KayNine"). The written-roster checks below still
+	// use the raw form c.
+	spoken := spokenForm(c)
 	norm := normalize(spoken)
 
 	if norm == "" {
@@ -195,10 +196,10 @@ func metaphoneSound(a, b string) (sev Severity, kind, detail string, ok bool) {
 
 func checkPair(a, b string) []Issue {
 	var issues []Issue
-	// Compare the callsigns as spoken, with digits read as words ("Dog4" ->
-	// "DogFour"), for every sound- and spelling-based check. The written-roster
-	// look-alike check below keeps the raw forms a, b.
-	sa, sb := expandDigits(a), expandDigits(b)
+	// Compare the callsigns as spoken — initialisms spelled out and digits read
+	// as words ("Dog4" -> "DogFour") — for every sound- and spelling-based
+	// check. The written-roster look-alike check below keeps the raw forms a, b.
+	sa, sb := spokenForm(a), spokenForm(b)
 	na, nb := normalize(sa), normalize(sb)
 	if na == "" || nb == "" {
 		return issues // empty handled by single check

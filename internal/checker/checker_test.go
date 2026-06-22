@@ -342,3 +342,66 @@ func TestTokens(t *testing.T) {
 		t.Errorf("tokens = %v, want %v", got, want)
 	}
 }
+
+func TestExpandInitialisms(t *testing.T) {
+	// Separator-delimited single letters and fully-uppercase tokens are spelled
+	// out as they are read aloud.
+	if got := expandInitialisms("S A"); got != "Ess Ay" {
+		t.Errorf(`expandInitialisms("S A") = %q, want "Ess Ay"`, got)
+	}
+	if got := expandInitialisms("LL"); got != "ElEl" {
+		t.Errorf(`expandInitialisms("LL") = %q, want "ElEl"`, got)
+	}
+	if got := expandInitialisms("USB Key"); got != "YouEssBee Key" {
+		t.Errorf(`expandInitialisms("USB Key") = %q, want "YouEssBee Key"`, got)
+	}
+	// A trailing/standalone capital is spelled out.
+	if got := expandInitialisms("GoldX"); got != "GoldEx" {
+		t.Errorf(`expandInitialisms("GoldX") = %q, want "GoldEx"`, got)
+	}
+
+	// An uppercase run that is the onset of an ordinary word is left untouched —
+	// these are the glued mixed-case forms we deliberately do not guess at.
+	if got := expandInitialisms("GoldWing"); got != "GoldWing" {
+		t.Errorf(`expandInitialisms("GoldWing") = %q, want "GoldWing"`, got)
+	}
+	if got := expandInitialisms("GBush"); got != "GBush" {
+		t.Errorf(`expandInitialisms("GBush") = %q, want "GBush"`, got)
+	}
+	if got := expandInitialisms("USBKey"); got != "USBKey" {
+		t.Errorf(`expandInitialisms("USBKey") = %q, want "USBKey"`, got)
+	}
+	if got := expandInitialisms("Gold"); got != "Gold" {
+		t.Errorf(`expandInitialisms("Gold") = %q, want "Gold"`, got)
+	}
+}
+
+func TestSpokenFormInitialismThenDigits(t *testing.T) {
+	// Initialisms are spelled out before digits expand, so a lone letter beside a
+	// digit reads correctly.
+	if got := spokenForm("R2D2"); got != "ArTwoDeeTwo" {
+		t.Errorf(`spokenForm("R2D2") = %q, want "ArTwoDeeTwo"`, got)
+	}
+	if got := spokenForm("K9"); got != "KayNine" {
+		t.Errorf(`spokenForm("K9") = %q, want "KayNine"`, got)
+	}
+	// An ordinary word with a digit is unaffected by the initialism pass.
+	if got := spokenForm("Dog4"); got != "DogFour" {
+		t.Errorf(`spokenForm("Dog4") = %q, want "DogFour"`, got)
+	}
+}
+
+func TestSpelledLettersNoFalseContainment(t *testing.T) {
+	// "S A" is spoken "ess ay", not the syllable "sa", so it is not contained in
+	// "Tulsa"; likewise "LL" ("el el") is not contained in "NullSet".
+	if hasKind(checkPair("S A", "Tulsa"), "substring") {
+		t.Errorf("S A should not be 'contained' in Tulsa, got %+v", checkPair("S A", "Tulsa"))
+	}
+	if hasKind(checkPair("LL", "NullSet"), "substring") {
+		t.Errorf("LL should not be 'contained' in NullSet, got %+v", checkPair("LL", "NullSet"))
+	}
+	// But a real spoken word inside another still counts as contained.
+	if !hasKind(checkPair("Sun", "Sunfire"), "substring") {
+		t.Errorf("expected Sun to be contained in Sunfire, got %+v", checkPair("Sun", "Sunfire"))
+	}
+}

@@ -36,6 +36,14 @@ Example output:
 Each callsign is checked on its own, and every **pair** is compared against
 every other. Findings are ranked CRITICAL → HIGH → MEDIUM → LOW → INFO.
 
+The sound- and spelling-based checks run on the callsign's **spoken form** — how
+it's read aloud. Digits become words (`Dog4` → "DogFour") and all-caps letter
+runs are spelled out (`S A` → "ess ay", `USB Key` → "you ess bee key"), so a
+spelled-out callsign isn't mistaken for a syllable — `S A` is "ess ay", not the
+"-sa" in `Tulsa`. An uppercase run *attached to* a lowercase word is left as a
+word, not guessed at (`GBush`, `USBKey` stay as written). The written-roster
+checks (look-alike, confusable characters) instead use the literal glyphs.
+
 Per callsign:
 - **NATO concatenation** — the name is just NATO phonetic words strung together
   (`golffoxtrot` = golf + foxtrot), or is itself a NATO word (`Echo`).
@@ -59,7 +67,8 @@ Per pair:
 - **Shared word** — share a whole word token, including camelCase splits
   (`GoldWing` / `GoldBar` both contain "Gold").
 - **Common prefix / suffix** — share an opening or closing run of letters.
-- **Substring** — one callsign is wholly contained in the other.
+- **Substring** — one callsign's spoken form is wholly contained in the other
+  (`Sun` inside `Sunfire`).
 
 ## Flags
 

@@ -122,9 +122,18 @@ func PhoneticDistance(a, b string) (dist float64, ok bool) {
 	return cost / float64(n), true
 }
 
+// codaIndelCost is the insertion/deletion cost charged for a sequence-final
+// voiceless stop (e.g. the /t/ in "Set") instead of the flat 1.0. A word-final
+// voiceless stop is perceptually faint — easily unreleased or lost on a noisy
+// radio channel — so two words that match except for such a trailing consonant
+// (e.g. "NullSet" / "Tulsa") should read as closer than a flat indel implies.
+const codaIndelCost = 0.4
+
 // phonemeEditDistance is a Levenshtein distance where substitution cost is the
 // articulatory-feature distance between two phonemes (0..1) and insertion or
-// deletion costs 1.
+// deletion costs 1 — except a sequence-final weak coda (voiceless stop) costs
+// codaIndelCost, since dropping such a trailing sound barely changes how a word
+// is heard on the air.
 func phonemeEditDistance(a, b []string) float64 {
 	prev := make([]float64, len(b)+1)
 	cur := make([]float64, len(b)+1)
@@ -135,13 +144,33 @@ func phonemeEditDistance(a, b []string) float64 {
 		cur[0] = float64(i)
 		for j := 1; j <= len(b); j++ {
 			sub := prev[j-1] + featureDistance(a[i-1], b[j-1])
-			del := prev[j] + 1
-			ins := cur[j-1] + 1
+			del := prev[j] + indelCost(a[i-1], i == len(a))
+			ins := cur[j-1] + indelCost(b[j-1], j == len(b))
 			cur[j] = minf(sub, minf(del, ins))
 		}
 		prev, cur = cur, prev
 	}
 	return prev[len(b)]
+}
+
+// indelCost is the cost of leaving tok unpaired. It is the flat 1.0, discounted
+// to codaIndelCost when tok is the final token of its sequence and a weak coda
+// (a voiceless stop), whose loss is perceptually minor.
+func indelCost(tok string, last bool) float64 {
+	if last && isWeakCoda(tok) {
+		return codaIndelCost
+	}
+	return 1.0
+}
+
+// isWeakCoda reports whether tok is a voiceless stop (p, t, k, and the
+// affricate tS) — a sound whose word-final realization is perceptually faint.
+func isWeakCoda(tok string) bool {
+	f, ok := lookupFeatures(tok)
+	if !ok {
+		return false
+	}
+	return !f.syl && !f.son && !f.cont && !f.voi && !f.nas
 }
 
 func minf(a, b float64) float64 {
