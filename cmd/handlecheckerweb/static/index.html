@@ -9,20 +9,20 @@
 <body>
   <header>
     <h1>Handle Checker</h1>
-    <p class="tagline">Vet proposed radio callsigns against your reserved and legacy handles.</p>
+    <p class="tagline">Vet proposed radio callsigns against your reserved and existing handles.</p>
   </header>
 
   <!-- Setup phase -->
   <p id="notice" class="notice">The server does not persist any of your data, so clearing your browser data or switching devices will lose these lists. Use the export buttons on the summary page to keep a copy.</p>
   <section id="setup" class="card">
-    <h2>1. Set up the baseline</h2>
+    <h2>First, configure reserved terms and existing handles</h2>
     <div class="field">
       <div class="label-row">
-        <label for="reserved">Reserved handles</label>
+        <label for="reserved">Reserved terms</label>
         <button type="button" id="loadReservedDefaults" class="link hidden">Load defaults</button>
       </div>
-      <p class="hint">Handles that should not be used. These can be place names, people, or terms belonging to other departments. One per line.</p>
-      <textarea id="reserved" rows="8" placeholder="Knight&#10;Base&#10;Dispatch"></textarea>
+      <p class="hint">Terms that should not be used. These can be place names, people, or terms belonging to other departments. One per line.</p>
+      <textarea id="reserved" rows="8" placeholder="Empty! Click 'Load defaults' to use Ranger special terms"></textarea>
     </div>
     <div class="field">
       <label for="existing">Existing handles</label>
@@ -37,9 +37,9 @@
 
   <!-- Propose phase -->
   <section id="propose" class="card">
-    <h2>2. Propose new handles</h2>
+    <h2>Then, propose new handles</h2>
     <div class="field">
-      <label for="proposed">Proposed handles to review</label>
+      <label for="proposed">New handles to review</label>
       <p class="hint">Paste the handles you want to vet. They'll be reviewed one at a time.</p>
       <textarea id="proposed" rows="8" placeholder="Nite&#10;GoldBar&#10;Echo"></textarea>
     </div>
