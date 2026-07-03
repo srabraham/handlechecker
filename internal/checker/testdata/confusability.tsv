@@ -34,6 +34,12 @@ confusable	Merlin	Marlin
 confusable	Cinder	Sender
 confusable	Minty	Misty
 
+# --- confusions a noisy band-limited channel creates ---
+# Place-of-articulation (p/t) and high-frequency fricative (f/θ) contrasts are
+# the first cues a radio channel destroys (Miller & Nicely 1955).
+confusable	Pony	Tony
+confusable	Fret	Threat
+
 # --- similar but not identical ---
 confusable	Blaze	Belize
 confusable	Thunder	Plunder

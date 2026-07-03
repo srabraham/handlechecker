@@ -100,23 +100,21 @@ first item is the prerequisite that makes the rest safe to do.
   Growth path: the web app's approve/reject workflow is a free labeling
   pipeline if decisions are logged.
 
-- **[ ] Perceptual (channel-aware) substitution costs.** `featureDistance` is a
-  uniform Hamming distance over 15 binary features, but confusability over a
-  band-limited noisy channel is not uniform, and some current costs are inverted
-  relative to the classic confusion data (Miller & Nicely 1955, measured over
-  exactly a radio-like channel):
-  - Place of articulation is the *most fragile* cue in noise (/p t k/, /m n/
-    confusions dominate); voicing and nasality survive to very low SNR. Today
-    /p/–/t/ (place, 2 features ≈ 0.13) costs *more* than /p/–/b/ (voicing,
-    ≈ 0.067) — backwards: on the air "Pat"/"Tat" beats "Pat"/"Bat" for
-    confusability.
-  - Radio voice is band-limited (~300–3000 Hz), destroying the high-frequency
-    energy that separates /f/–/θ/–/s/. "Free"/"Three" is among the most confused
-    pairs in English, yet /f/–/θ/ costs 0.20 — rated less similar than /b/–/d/.
-  Fix: per-feature perceptual weights (place low, voicing medium,
-  manner/nasality/sonorance high), or a small consonant confusion-cost matrix
-  with the feature distance as fallback. One change; every downstream check
-  (global distance, containment, overlap, opening) inherits it.
+- **[x] Perceptual (channel-aware) substitution costs.** Implemented in
+  `features.go`: `articDiff`'s uniform Hamming count is replaced by `articDist`,
+  a weighted sum with per-feature perceptual weights modeling a band-limited
+  noisy radio channel (Miller & Nicely 1955) — place of articulation and
+  stridency cheap (0.5; the channel destroys those cues, so /p/–/t/, /m/–/n/,
+  /f/–/θ/ now read as close), nasality/manner/voicing expensive (1.25–1.75;
+  those cues survive noise), vowel-geometry features unchanged at 1.0 (graded
+  vowel distances are a separate item below). This fixed the two inversions
+  cited in the review: /p/–/t/ (0.063) is now cheaper than /p/–/b/ (0.079), and
+  /f/–/θ/ halved to 0.095. The weights sum to ~15.75 so the distance scale (and
+  the tuned thresholds) held: the corpus stayed at precision 0.97 / recall 1.00
+  with no threshold changes, and two channel-confusion pairs (Pony/Tony,
+  Fret/Threat) were added to it as regression anchors. `TestPerceptualWeights`
+  (in `phonemes_test.go`) pins the orderings; stale comment-cited distances in
+  `checker.go`/CLAUDE.md were re-measured via `--explain` and updated.
 
 - **[ ] Use stress — `parsePhonemes` currently strips it.** Stress pattern is
   one of the strongest cues in noisy-channel word recognition. Keep espeak's
@@ -178,9 +176,8 @@ capture most of the value at zero runtime cost.
 
 ## This pass
 
-Implemented the **labeled confusability corpus with precision/recall
-assertions** (§5, item 1) — the prerequisite for the rest of §5. Next up:
-perceptual substitution costs, then stress.
+Implemented the **labeled confusability corpus** (§5, item 1) and **perceptual
+channel-aware substitution costs** (§5, item 2). Next up: stress (§5, item 3).
 
 Previous pass: proword/safety-word check (§1), phoneme-aware
 Rhyme/SyllableCount (§2), Undo in the web app (§3).

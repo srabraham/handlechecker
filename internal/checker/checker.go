@@ -170,17 +170,19 @@ const (
 // scattered across two short words — not confusable on the air. So a MED-band
 // finding is confirmed only when the best local alignment (PhoneticOverlap) is
 // at least this clean. The cutoff sits above genuine catches (Gold/Gild 0.13,
-// Blaze/Belize 0.10, Thunder/Plunder 0.04) and below the noise the global
-// distance alone lets through (Tulsa/Minty, NullSet/Ramsey, HawkEye/Fowler all
-// ~0.20–0.24 — globally in-band, but with no clean shared run).
+// Blaze/Belize 0.12, Thunder/Plunder 0.04) and below the noise the global
+// distance alone lets through (NullSet/Ramsey, HawkEye/Fowler, Tulsa/Dispatch —
+// globally in-band at 0.17–0.24, but their best shared runs match no better
+// than 0.17).
 const similarOverlapMax = 0.15
 
 // Phonetic containment (one callsign's whole pronunciation heard at an edge of
 // the other, e.g. "CCS" at the front of "CCEssay") is flagged HIGH — the spoken
 // analogue of the written "substring" check — only when that contained run is
-// near-perfect. The bar must stay below a near-miss tail like "Dog" vs "Log"
-// (the "DustyDog"/"ADustyLog" run, 0.075), so a partial overlap can't masquerade
-// as containment.
+// near-perfect. The bar must stay below near-miss edges — a single substituted
+// sound keeps the worst-per-phoneme edge distance high ("Thunder" at the tail
+// of "Plunder" scores 0.22, "DustyDog" against "ADustyLog" 0.38) — so a partial
+// overlap can't masquerade as containment.
 const containMaxDist = 0.06
 
 // A shared run of sounds (local alignment) is flagged when it spans at least
@@ -211,7 +213,7 @@ const (
 // and rhyme — leaves only the middle to tell them apart, which the ear easily
 // misses even when the whole-word distance looks safe. The bar is near-identical:
 // it admits a shared /h/ ("Hot Guy"/"HawkEye", 0.00) but not a merely close onset
-// like /m/ vs /b/ ("Monsoon"/"Balloon", 0.13), which only coincidentally rhymes.
+// like /m/ vs /b/ ("Monsoon"/"Balloon", 0.21), which only coincidentally rhymes.
 const openingMaxDist = 0.10
 
 // Ranking distance for a rhyme+opening "sound-similar" finding. This finding has

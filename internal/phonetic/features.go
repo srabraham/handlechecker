@@ -1,9 +1,10 @@
 package phonetic
 
 // artic is a compact articulatory feature vector for one phoneme. Each field is
-// a binary distinctive feature; phonemes that share more features sound more
-// alike. The values are approximate (especially for diphthongs) but consistent
-// enough to drive a feature-weighted edit distance.
+// a binary distinctive feature; two phonemes sound more alike the smaller the
+// perceptually-weighted sum of the features on which they differ (see the
+// weights below). The values are approximate (especially for diphthongs) but
+// consistent enough to drive a feature-weighted edit distance.
 type artic struct {
 	syl   bool // syllabic (vowels)
 	son   bool // sonorant (vowels, nasals, liquids, glides)
@@ -22,18 +23,63 @@ type artic struct {
 	tense bool // tense/long (vowels)
 }
 
-const numFeatures = 15.0
+// Per-feature perceptual weights. A weight is the cost of two phonemes
+// differing in that feature, and it models confusability over a *band-limited,
+// noisy radio channel* (~300–3000 Hz), not articulatory bookkeeping: a cue that
+// survives channel noise keeps two sounds apart on the air (high weight), while
+// a cue the channel destroys does not (low weight), no matter how distinct the
+// sounds are face to face. The ranking follows the classic consonant-confusion
+// data (Miller & Nicely 1955, measured over exactly such a channel):
+//
+//   - Nasality and manner (sonorant, continuant) are recovered correctly even
+//     at very low SNR — highest weights.
+//   - Voicing is nearly as robust — high weight.
+//   - Place of articulation (labial/coronal/dorsal) is the *first* cue lost in
+//     noise: /p t k/, /b d g/, /m n/ confusions dominate the matrices — lowest
+//     weight.
+//   - Stridency mostly rides on high-frequency energy the channel cuts off
+//     (the /f/–/θ/, /s/–/θ/ distinctions) — lowest weight.
+//   - The vowel-geometry features (high/low/back/round/tense) stay at 1.0:
+//     vowels are carried by formants the channel passes, and their relative
+//     geometry is a separate concern (see the graded-vowel-distances roadmap
+//     item). Vowel salience overall is handled by vowelWeight in phonemes.go.
+//
+// The weights sum to totalFeatureWeight, which featureDistance divides by, so
+// the distance stays normalized to [0,1] and the overall scale (and thus the
+// tuned thresholds in checker.go) is roughly preserved from the old uniform
+// 1/15-per-feature scheme.
+const (
+	wSyl   = 2.0  // vowel vs consonant: structural, never misheard as each other
+	wSon   = 1.5  // sonorant vs obstruent: manner, robust in noise
+	wVoi   = 1.25 // voicing: robust in noise (M&N)
+	wNas   = 1.75 // nasality: the most robust cue in the M&N matrices
+	wCont  = 1.5  // stop vs continuant: manner, robust in noise
+	wPlace = 0.5  // labial/coronal/dorsal: the first cue lost in noise
+	wStrid = 0.5  // sibilance: high-frequency energy the channel cuts
+	wLat   = 0.75 // l vs r: moderately confusable on the air
+	wVowel = 1.0  // high/low/back/round/tense: vowel geometry, unchanged
+)
 
-func articDiff(a, b artic) int {
-	d := 0
-	for _, p := range [...][2]bool{
-		{a.syl, b.syl}, {a.son, b.son}, {a.voi, b.voi}, {a.nas, b.nas},
-		{a.cont, b.cont}, {a.lab, b.lab}, {a.cor, b.cor}, {a.dor, b.dor},
-		{a.strid, b.strid}, {a.lat, b.lat}, {a.high, b.high}, {a.low, b.low},
-		{a.back, b.back}, {a.round, b.round}, {a.tense, b.tense},
+const totalFeatureWeight = wSyl + wSon + wVoi + wNas + wCont +
+	3*wPlace + wStrid + wLat + 5*wVowel // = 15.75
+
+// articDist is the weighted sum of the features on which a and b differ, in
+// [0, totalFeatureWeight].
+func articDist(a, b artic) float64 {
+	d := 0.0
+	for _, p := range [...]struct {
+		a, b bool
+		w    float64
+	}{
+		{a.syl, b.syl, wSyl}, {a.son, b.son, wSon}, {a.voi, b.voi, wVoi},
+		{a.nas, b.nas, wNas}, {a.cont, b.cont, wCont},
+		{a.lab, b.lab, wPlace}, {a.cor, b.cor, wPlace}, {a.dor, b.dor, wPlace},
+		{a.strid, b.strid, wStrid}, {a.lat, b.lat, wLat},
+		{a.high, b.high, wVowel}, {a.low, b.low, wVowel}, {a.back, b.back, wVowel},
+		{a.round, b.round, wVowel}, {a.tense, b.tense, wVowel},
 	} {
-		if p[0] != p[1] {
-			d++
+		if p.a != p.b {
+			d += p.w
 		}
 	}
 	return d

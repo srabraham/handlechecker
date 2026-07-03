@@ -30,6 +30,38 @@ func TestFeatureDistance(t *testing.T) {
 	}
 }
 
+// TestPerceptualWeights pins the channel-aware orderings the feature weights
+// exist for (see the weight rationale in features.go): cues a noisy band-limited
+// radio destroys (place, stridency) must cost less than cues that survive it
+// (voicing, manner, nasality), per the Miller & Nicely confusion data.
+func TestPerceptualWeights(t *testing.T) {
+	// Place of articulation is the first cue lost in noise; voicing survives.
+	// So /p/-/t/ (place) must be closer than /p/-/b/ (voicing) — on the air
+	// "Pat"/"Tat" is the more confusable pair, and likewise /t/-/k/ vs /t/-/d/.
+	if pt, pb := featureDistance("p", "t"), featureDistance("p", "b"); pt >= pb {
+		t.Errorf("place must be cheaper than voicing: d(p,t)=%.3f >= d(p,b)=%.3f", pt, pb)
+	}
+	if tk, td := featureDistance("t", "k"), featureDistance("t", "d"); tk >= td {
+		t.Errorf("place must be cheaper than voicing: d(t,k)=%.3f >= d(t,d)=%.3f", tk, td)
+	}
+
+	// Nasals confuse by place too: /m/-/n/ must be closer than a nasality
+	// difference like /m/-/b/.
+	if mn, mb := featureDistance("m", "n"), featureDistance("m", "b"); mn >= mb {
+		t.Errorf("d(m,n)=%.3f should be < d(m,b)=%.3f", mn, mb)
+	}
+
+	// The /f/-/θ/ and /s/-/θ/ distinctions ride on high-frequency energy the
+	// channel cuts ("Free"/"Three"), so they must cost less than a manner
+	// difference like /t/-/s/.
+	if fT, ts := featureDistance("f", "T"), featureDistance("t", "s"); fT >= ts {
+		t.Errorf("d(f,T)=%.3f should be < d(t,s)=%.3f", fT, ts)
+	}
+	if sT, ts := featureDistance("s", "T"), featureDistance("t", "s"); sT >= ts {
+		t.Errorf("d(s,T)=%.3f should be < d(t,s)=%.3f", sT, ts)
+	}
+}
+
 // TestPhonemeBattery only runs when espeak-ng is present; it prints distances so
 // thresholds can be tuned, and asserts the basic ordering we rely on.
 func TestPhonemeBattery(t *testing.T) {

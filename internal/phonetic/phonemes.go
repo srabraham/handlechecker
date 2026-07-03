@@ -186,8 +186,9 @@ func minf(a, b float64) float64 {
 const vowelWeight = 2.0
 
 // featureDistance returns the cost of substituting phoneme x with y: the
-// fraction of articulatory features that differ (0 = same sound, 1 = unknown or
-// totally different), scaled up for vowel-vowel substitutions.
+// perceptually-weighted fraction of articulatory features that differ (0 = same
+// sound, 1 = unknown or totally different; see the feature weights in
+// features.go), scaled up for vowel-vowel substitutions.
 func featureDistance(x, y string) float64 {
 	if x == y {
 		return 0
@@ -197,7 +198,7 @@ func featureDistance(x, y string) float64 {
 	if !okx || !oky {
 		return 1.0
 	}
-	d := float64(articDiff(fx, fy)) / numFeatures
+	d := articDist(fx, fy) / totalFeatureWeight
 	if fx.syl && fy.syl {
 		d *= vowelWeight
 	}
