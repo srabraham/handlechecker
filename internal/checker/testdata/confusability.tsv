@@ -1,0 +1,91 @@
+# Labeled confusability corpus (see corpus_test.go).
+#
+# Format: label<TAB>handleA<TAB>handleB. Blank lines and #-comments ignored.
+# Handles may contain spaces, so the separator is a tab.
+#
+# The label is a GROUND-TRUTH human judgment of whether the two handles would
+# plausibly be confused over a noisy radio channel — NOT a record of what the
+# checker currently reports. Pairs the engine gets wrong belong here too (they
+# are what the precision/recall floors in TestConfusabilityCorpus measure, and
+# what future engine work should fix). Do not relabel a pair to make the test
+# pass; fix the engine or adjust the floors with a comment.
+#
+#   confusable — a reasonable operator could mistake one for the other on air;
+#                the checker should flag the pair at MEDIUM or above.
+#   distinct   — clearly distinguishable by ear; the checker should stay below
+#                MEDIUM (LOW/INFO findings are fine).
+#
+# When adding pairs, prefer real proposed handles and real confusions from the
+# field over engineered examples.
+
+# --- near-identical pronunciations (different spellings) ---
+confusable	Knight	Nite
+confusable	Gold	Cold
+confusable	Phipps	Fips
+confusable	Catherine	Katherine
+confusable	Sun	Son
+confusable	Spark	Sparc
+
+# --- vowel-quality differences (the reason espeak-ng is preferred) ---
+confusable	Gold	Gild
+confusable	Ranger	Ringer
+confusable	Bat	Bit
+confusable	Merlin	Marlin
+confusable	Cinder	Sender
+confusable	Minty	Misty
+
+# --- similar but not identical ---
+confusable	Blaze	Belize
+confusable	Thunder	Plunder
+confusable	Coyote	Peyote
+confusable	Glitter	Critter
+confusable	Pickle	Nickel
+
+# --- containment / shared cores ---
+confusable	Ranger	Stranger
+confusable	Barn	Bar
+confusable	CCS	CCEssay
+confusable	DustyDog	ADustyLog
+confusable	NullSet	Tulsa
+
+# --- alike at both ends, or sharing a word ---
+confusable	Hot Guy	HawkEye
+confusable	GoldWing	GoldBar
+confusable	Stardust	Sawdust
+confusable	Sunset	Sunrise
+confusable	Moonbeam	Sunbeam
+# Borderline: same stressed /ar/ nucleus, shared middle /m/, only a faint
+# trailing /t/ and the m/k onset apart — a MEDIUM "worth a look" is right.
+confusable	Marmot	Karma
+
+# --- distinct: moderate global distance but no real shared run ---
+distinct	Tulsa	Minty
+distinct	Tulsa	Dispatch
+distinct	NullSet	Ramsey
+distinct	HawkEye	Fowler
+
+# --- distinct: partial overlaps that should not count ---
+distinct	Abraham	Zebra
+distinct	Random	Frankenstein
+distinct	Tulsa	Delta Victor
+distinct	Monsoon	Balloon
+
+# --- distinct: clearly different handles ---
+distinct	GoldWing	Sunfire
+distinct	Dust	Playa
+distinct	Thunder	Lantern
+distinct	Brightside	Zye Zye
+distinct	Waffles	Tinker
+distinct	Cinder	Marmot
+distinct	Sparkle	Thunder
+distinct	Badger	Vulture
+distinct	Peaches	Gizmo
+distinct	Anvil	Orbit
+distinct	Fox	Dragon
+distinct	Snowflake	Firefly
+# Known engine noise: /i/ vs /ɑ/ is a maximally distant vowel pair and vowels
+# survive channel noise well, but Metaphone's vowel-collapsing escalation rates
+# the pair a HIGH sound-alike and the coarse binary vowel features let the
+# phoneme MED band fire too (see IMPROVEMENTS.md §2 "Metaphone fallback
+# over-fires on vowels" and §5 "graded vowel distances").
+distinct	Sweet	Swat

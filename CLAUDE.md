@@ -230,7 +230,15 @@ binaries consume `checker`:
   `phonemes.go`/`features.go` were hand-tuned against a battery of real
   pronunciations (see comments citing Gold/Cold=0.02, Gold/Gild=0.13). Changing
   them shifts which pairs get flagged HIGH vs MEDIUM — re-validate against the
-  test battery in `phonemes_test.go`. `codaIndelCost` charges an unpaired
+  labeled corpus in `internal/checker/testdata/confusability.tsv`
+  (`TestConfusabilityCorpus` in `corpus_test.go` scores the user-facing verdict —
+  any finding ≥ MEDIUM — over every pair and asserts precision/recall floors;
+  run with `-v` for the measured metrics and each misclassified pair; needs
+  espeak-ng, so run it in Docker if the local PATH lacks it). The corpus labels
+  are ground-truth human judgments, including documented known engine errors —
+  never relabel a pair to make the test pass. The distance battery in
+  `phonemes_test.go` also logs raw per-pair distances for threshold tuning.
+  `codaIndelCost` charges an unpaired
   sequence-final voiceless stop (e.g. the "t" of "Set") less than a full indel,
   since a trailing stop is perceptually faint on the air — so "NullSet"/"Tulsa"
   scores closer (0.10, not 0.20) without dragging the "clearly different" pairs

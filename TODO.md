@@ -53,7 +53,9 @@ See `IMPROVEMENTS.md` for the broader prioritized critique and roadmap.
   - Diphthongs are approximated by a single feature vector; model them as a
     two-vowel trajectory for more accurate distances.
   - Feature weights and the HIGH/MED thresholds were hand-tuned against a small
-    battery — expand the battery and tune more rigorously.
+    battery — a labeled confusability corpus with precision/recall floors now
+    guards them (`internal/checker/testdata/confusability.tsv`,
+    `TestConfusabilityCorpus`); keep growing it with real pairs.
   - Use stress/syllable boundaries from espeak (currently stripped) to align
     syllables and weight stressed nuclei more heavily.
   - Consider `libespeak-ng` via cgo to avoid one subprocess per callsign (the
