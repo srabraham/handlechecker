@@ -54,7 +54,7 @@ func phonemeSyllableCount(s string) (int, bool) {
 		return 0, false
 	}
 	n := 0
-	for _, t := range toks {
+	for _, t := range stripStress(toks) {
 		if _, known := lookupFeatures(t); !known {
 			return 0, false
 		}
@@ -72,8 +72,10 @@ func phonemeSyllableCount(s string) (int, bool) {
 }
 
 // phonemeRhyme returns the rime — the final syllabic phoneme and everything after
-// it — from the espeak pronunciation of s, joined into a comparison key. ok is
-// false when espeak is unavailable, s has no letters, or there is no vowel.
+// it — from the espeak pronunciation of s, joined into a comparison key. Stress
+// marks are stripped from the key: whether the final syllable happens to carry
+// the word's stress ("Sting" vs "GoldWing") doesn't change what it rhymes with.
+// ok is false when espeak is unavailable, s has no letters, or there is no vowel.
 func phonemeRhyme(s string) (string, bool) {
 	if lettersLower(s) == "" {
 		return "", false
@@ -91,7 +93,7 @@ func phonemeRhyme(s string) (string, bool) {
 	if last < 0 {
 		return "", false
 	}
-	return strings.Join(toks[last:], ""), true
+	return strings.Join(stripStress(toks[last:]), ""), true
 }
 
 // --- spelling heuristics (fallback when espeak-ng is absent) ------------------

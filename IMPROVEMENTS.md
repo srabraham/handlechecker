@@ -116,16 +116,25 @@ first item is the prerequisite that makes the rest safe to do.
   (in `phonemes_test.go`) pins the orderings; stale comment-cited distances in
   `checker.go`/CLAUDE.md were re-measured via `--explain` and updated.
 
-- **[ ] Use stress — `parsePhonemes` currently strips it.** Stress pattern is
-  one of the strongest cues in noisy-channel word recognition. Keep espeak's
-  stress marks, attach them to the following vowel, then: (a) scale
-  substitution/indel cost by the stress of the syllable it occurs in (unstressed
-  vowels reduce toward schwa and carry little identity — `vowelWeight` should
-  not price a stressed and an unstressed nucleus swap the same); (b) treat a
-  matching syllable-count + stress contour as a similarity signal (the
-  principled version of the disabled `syllable-count` check); (c) discount
-  schwa/unstressed-vowel indels ("Blaze"/"Belize" epenthesis) — the same root
-  cause the `codaIndelCost` hack patches for trailing stops.
+- **[x] Use stress — `parsePhonemes` previously stripped it.** Implemented:
+  stress marks are kept as a `'` prefix on the vowel token (secondary stress
+  folds into primary, since espeak demotes a word's stress when it is embedded
+  in a longer handle — "CCS" vs "CCEssay"; a mark on a consonant carries
+  forward to the syllable's vowel). `featureDistance` then (a) scales a vowel
+  swap by `vowelWeight` only when a *stressed* nucleus is involved — two
+  unstressed (reduced) vowels compare unscaled — and charges a mild
+  `stressMismatchCost` for a stress shift; (c) `indelCost` discounts an
+  unstressed-vowel indel (`unstressedIndelCost` 0.5), which moved
+  "Blaze"/"Belize" from 0.225 (a hair under the 0.24 MED cutoff) to 0.125.
+  A `syllabicityFloor` (0.5) on vowel↔consonant substitutions was needed
+  alongside: the cheap unstressed indel otherwise opened a degenerate
+  alignment ("insert the unstressed vowel, substitute vowel-for-consonant")
+  that collapsed "Thunder"/"Lantern" into the MED band — the corpus caught it.
+  Rime keys strip stress so "Sting" still rhymes with "Nesting". Corpus held
+  at precision 0.97 / recall 1.00 with no threshold changes. Sub-item (b) —
+  matching syllable-count + stress contour as a pairwise similarity signal —
+  is deferred to the combined-score item below, where it belongs as one more
+  continuous feature rather than another standalone gate.
 
 - **[ ] Combine evidence into one score; retire the threshold-gate cascade.**
   `checkPair` is a decision tree of eight tuned constants where each false
@@ -176,8 +185,10 @@ capture most of the value at zero runtime cost.
 
 ## This pass
 
-Implemented the **labeled confusability corpus** (§5, item 1) and **perceptual
-channel-aware substitution costs** (§5, item 2). Next up: stress (§5, item 3).
+Implemented §5 items 1–3: the **labeled confusability corpus**, **perceptual
+channel-aware substitution costs**, and **stress-aware distances**. Next up:
+combining the evidence into one score (§5, item 4), which also picks up the
+deferred stress-contour signal.
 
 Previous pass: proword/safety-word check (§1), phoneme-aware
 Rhyme/SyllableCount (§2), Undo in the web app (§3).

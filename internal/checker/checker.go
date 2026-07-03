@@ -158,7 +158,7 @@ func checkSingle(c string) []Issue {
 // Phoneme-distance thresholds (from espeak-ng), tuned against a battery of
 // real pronunciations: at or below High the words sound nearly identical
 // (e.g. Gold/Cold = 0.02), at or below Med they sound similar (e.g. Gold/Gild
-// = 0.13, Blaze/Belize = 0.23).
+// = 0.13, Blaze/Belize = 0.13).
 const (
 	phonemeHighMax = 0.06
 	phonemeMedMax  = 0.24
@@ -170,10 +170,9 @@ const (
 // scattered across two short words — not confusable on the air. So a MED-band
 // finding is confirmed only when the best local alignment (PhoneticOverlap) is
 // at least this clean. The cutoff sits above genuine catches (Gold/Gild 0.13,
-// Blaze/Belize 0.12, Thunder/Plunder 0.04) and below the noise the global
-// distance alone lets through (NullSet/Ramsey, HawkEye/Fowler, Tulsa/Dispatch —
-// globally in-band at 0.17–0.24, but their best shared runs match no better
-// than 0.17).
+// Blaze/Belize 0.13, Thunder/Plunder 0.04) and below the noise the global
+// distance alone lets through (HawkEye/Fowler and Tulsa/Minty — globally
+// in-band at 0.20–0.22, but their best shared runs match no better than 0.20).
 const similarOverlapMax = 0.15
 
 // Phonetic containment (one callsign's whole pronunciation heard at an edge of

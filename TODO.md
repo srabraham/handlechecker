@@ -56,7 +56,8 @@ See `IMPROVEMENTS.md` for the broader prioritized critique and roadmap.
     battery — a labeled confusability corpus with precision/recall floors now
     guards them (`internal/checker/testdata/confusability.tsv`,
     `TestConfusabilityCorpus`); keep growing it with real pairs.
-  - Use stress/syllable boundaries from espeak (currently stripped) to align
-    syllables and weight stressed nuclei more heavily.
+  - Stress is now kept and used (stressed nuclei weighted, unstressed indels
+    discounted, vowel↔consonant substitutions floored — see `phonemes.go`);
+    full syllable-level alignment remains a possible future refactor.
   - Consider `libespeak-ng` via cgo to avoid one subprocess per callsign (the
     phonemize cache already amortizes this to one call per callsign).

@@ -207,8 +207,18 @@ binaries consume `checker`:
      so /p/–/t/, /m/–/n/, /f/–/θ/ read as close), while nasality, manner, and
      voicing are expensive (those cues survive noise). `TestPerceptualWeights`
      pins the orderings; see the weight rationale comment in `features.go`
-     before touching them. `PhoneticDistance` returns a normalized distance
-     and `ok=false` when espeak-ng is unavailable.
+     before touching them. The distance is also **stress-aware**: espeak's
+     stress marks are kept (normalized to a `'` prefix on the vowel token,
+     secondary folded into primary — see `parsePhonemes`), a swap of *stressed*
+     nuclei is scaled by `vowelWeight` while two unstressed (reduced) vowels
+     compare unscaled, an unstressed-vowel indel is discounted
+     (`unstressedIndelCost` — the epenthetic /ə/ separating "Blaze"/"Belize"),
+     and a vowel↔consonant substitution is floored at `syllabicityFloor` so
+     cheap unstressed indels can't open degenerate alignments (see that
+     constant's comment for the "Thunder"/"Lantern" failure it prevents). Rime
+     keys strip stress (`phonemeRhyme`), so "Sting" still rhymes with
+     "Nesting". `PhoneticDistance` returns a normalized distance and
+     `ok=false` when espeak-ng is unavailable.
   2. **Metaphone 3 (fallback)** — `metaphone3.go`. Pure Go via
      `github.com/dlclark/metaphone3`. `SoundsAlike`/`SoundsSimilar`/
      `SoundsLikeStartOf` cross-match primary+secondary keys with and without
@@ -248,13 +258,13 @@ binaries consume `checker`:
   `codaIndelCost` charges an unpaired
   sequence-final voiceless stop (e.g. the "t" of "Set") less than a full indel,
   since a trailing stop is perceptually faint on the air — so "NullSet"/"Tulsa"
-  scores closer (0.11 rather than ~0.21) without dragging the "clearly
+  scores closer (0.13 rather than ~0.23) without dragging the "clearly
   different" pairs into range. A MED-band global distance is additionally gated
   on a clean shared run (`similarOverlapMax`, via `PhoneticOverlap`): a moderate
   distance with no contiguous run in common is diffuse coincidental overlap, not
-  a real conflict ("NullSet"/"Ramsey", "HawkEye"/"Fowler", "Tulsa"/"Dispatch" —
-  globally in-band but no clean shared run — are suppressed, while Gold/Gild,
-  Blaze/Belize, Thunder/Plunder keep their run and stay flagged).
+  a real conflict ("HawkEye"/"Fowler", "Tulsa"/"Minty" — globally in-band but no
+  clean shared run — are suppressed, while Gold/Gild, Blaze/Belize,
+  Thunder/Plunder keep their run and stay flagged).
 
 - **Phonetic containment is the spoken analogue of the written substring check.**
   `phonetic.PhoneticContainment` flags HIGH "sound-substring" when one callsign's
