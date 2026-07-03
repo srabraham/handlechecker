@@ -143,12 +143,13 @@ binaries consume `checker`:
   enum `SevInfo < SevLow < SevMedium < SevHigh < SevCritical`.
   `ExplainPair(a, b)` (in `explain.go`, behind the CLI's `--explain`) is a
   diagnostic that returns every pairwise check's verdict — fired or silent, with
-  the metric and threshold either way. It deliberately mirrors `checkPair` step
-  for step and reuses the same threshold constants and suppression rules, so the
-  two must be kept in lockstep; `TestExplainMatchesCheckPair` asserts they agree
-  (same set of fired severities as `checkPair`'s issues) and will fail on drift.
-  Spelling/sight
-  helpers live alongside: `nato.go` (decompose a name into NATO alphabet words),
+  the metric and threshold either way. All the *sound* decisions are computed
+  once in `evaluateSound` (`score.go`) and consumed by both `checkPair` and
+  `ExplainPair`, so those cannot drift; the spelling/roster checks are still
+  mirrored by hand and must be kept in lockstep. `TestExplainMatchesCheckPair`
+  asserts the two agree (same set of fired severities as `checkPair`'s issues)
+  and will fail on drift.
+  Spelling/sight helpers live alongside:
   `written.go` (homoglyph folding for written-roster look-alikes), `digits.go`
   (`expandDigits` reads a digit as its spoken word, "Dog4" -> "DogFour"),
   `initialisms.go` (`expandInitialisms` spells an all-caps letter run as its
@@ -225,70 +226,83 @@ binaries consume `checker`:
      vowel positions. Metaphone collapses *all* vowels to one value, so it cannot
      tell `Gold` from `Gild` — which is exactly why engine 1 is preferred.
 
-  `prosody.go` adds `Rhyme` (final-vowel rime) and `SyllableCount`. Each derives
-  its answer from the espeak-ng phoneme stream when available (so silent letters
-  and digraphs are handled correctly) and falls back to a spelling heuristic
-  otherwise — including when a phoneme token is unrecognized, so a partial
-  reading is never trusted. Their rime keys are opaque and engine-dependent;
-  callers compare them only for equality.
+  `prosody.go` adds `Rhyme` (final-vowel rime), `SyllableCount`, and
+  `StressContour` (the stress pattern over the syllable nuclei, "Belize" ->
+  "01" — a weak corroborating signal in the combined score). Rhyme and
+  SyllableCount derive their answers from the espeak-ng phoneme stream when
+  available (so silent letters and digraphs are handled correctly) and fall
+  back to a spelling heuristic otherwise — including when a phoneme token is
+  unrecognized, so a partial reading is never trusted; StressContour is
+  espeak-only (`ok=false` otherwise). Rime keys and contours are opaque and
+  engine-dependent; callers compare them only for equality.
 
 ### Two things to know before changing the engines
 
 - **The espeak-ng dependency is optional and runtime-only.** It is *not* on the
   developer's PATH by default (only the Docker image bundles it), so locally the
-  Metaphone fallback path runs. `checkPair` in `checker.go` calls
-  `phonetic.PhoneticDistance` first and branches to the Metaphone functions only
-  when `ok` is false — keep both branches in sync when changing sound logic, and
-  test both with and without espeak-ng installed.
+  Metaphone fallback path may run. `evaluateSound` in `score.go` tries the
+  phoneme-signal score first and falls back to Metaphone (plus the
+  spelling-heuristic rhyme) when espeak-ng is unavailable — keep both branches
+  in sync when changing sound logic, and test both with and without espeak-ng
+  installed.
 
-- **Severity thresholds are tuned constants, not arbitrary.** The phoneme
-  HIGH/MED cutoffs (`phonemeHighMax`, `phonemeMedMax` in `checker.go`), the
-  feature weights / `vowelWeight`, and the `codaIndelCost` discount in
-  `phonemes.go`/`features.go` were hand-tuned against a battery of real
-  pronunciations (see comments citing Gold/Cold=0.02, Gold/Gild=0.13). Changing
-  them shifts which pairs get flagged HIGH vs MEDIUM — re-validate against the
-  labeled corpus in `internal/checker/testdata/confusability.tsv`
-  (`TestConfusabilityCorpus` in `corpus_test.go` scores the user-facing verdict —
-  any finding ≥ MEDIUM — over every pair and asserts precision/recall floors;
-  run with `-v` for the measured metrics and each misclassified pair; needs
-  espeak-ng, so run it in Docker if the local PATH lacks it). The corpus labels
-  are ground-truth human judgments, including documented known engine errors —
-  never relabel a pair to make the test pass. The distance battery in
-  `phonemes_test.go` also logs raw per-pair distances for threshold tuning.
-  `codaIndelCost` charges an unpaired
-  sequence-final voiceless stop (e.g. the "t" of "Set") less than a full indel,
-  since a trailing stop is perceptually faint on the air — so "NullSet"/"Tulsa"
-  scores closer (0.13 rather than ~0.23) without dragging the "clearly
-  different" pairs into range. A MED-band global distance is additionally gated
-  on a clean shared run (`similarOverlapMax`, via `PhoneticOverlap`): a moderate
-  distance with no contiguous run in common is diffuse coincidental overlap, not
-  a real conflict ("HawkEye"/"Fowler", "Tulsa"/"Minty" — globally in-band but no
-  clean shared run — are suppressed, while Gold/Gild, Blaze/Belize,
-  Thunder/Plunder keep their run and stay flagged).
+- **The sound verdict is one combined score, not a gate cascade.** `score.go`
+  gathers the continuous sound signals for a pair — global phoneme distance,
+  containment edge distance, best shared run (distance + syllables), shared
+  rime + onset distance, stress contour — converts each to a weighted
+  contribution (a linear closeness ramp per signal, so no hard cliffs), and
+  combines them with a noisy-OR (`scoreSignals`), so corroborating evidence
+  accumulates while redundant evidence saturates. The total is banded into
+  severities at the end (`scoreHigh`/`scoreMed`; LOW is reserved for the plain
+  rhyme) and the finding's kind/detail names the top contributing signal, so
+  the output vocabulary (sound-alike, sound-similar, sound-overlap,
+  sound-substring, rhyme) is unchanged. The weights, ramps, and bands are
+  **tuned constants, not arbitrary** — hand-calibrated (see the comments in
+  `score.go` citing measured pairs) against the labeled corpus in
+  `internal/checker/testdata/confusability.tsv`. `TestConfusabilityCorpus`
+  (`corpus_test.go`) scores the user-facing verdict — any finding ≥ MEDIUM —
+  over every pair and asserts precision/recall floors (run with `-v` for the
+  measured metrics and each misclassified pair; needs espeak-ng, so run it in
+  Docker if the local PATH lacks it), and `TestSoundScoreTable` logs every
+  corpus pair's raw signals, contributions, and total — start there when
+  retuning. The corpus labels are ground-truth human judgments, including
+  documented known engine errors — never relabel a pair to make the test pass.
+  The same discipline applies one level down: the feature weights /
+  `vowelWeight` and the `codaIndelCost`/`unstressedIndelCost` discounts in
+  `phonemes.go`/`features.go` shape every distance the score consumes (e.g.
+  `codaIndelCost` charges an unpaired sequence-final voiceless stop — the "t"
+  of "Set" — less than a full indel, which is what pulls "NullSet"/"Tulsa"
+  into range), and the battery in `phonemes_test.go` logs raw per-pair
+  distances for tuning them.
 
 - **Phonetic containment is the spoken analogue of the written substring check.**
-  `phonetic.PhoneticContainment` flags HIGH "sound-substring" when one callsign's
-  whole pronunciation is heard at the **start or end** of the other's, even when
-  the spellings share nothing ("CCS" voices as "see-see-ess", exactly the front of
+  `phonetic.PhoneticContainment` measures whether one callsign's whole
+  pronunciation is heard at the **start or end** of the other's, even when the
+  spellings share nothing ("CCS" voices as "see-see-ess", exactly the front of
   "CCEssay" — but they normalize to `seeseeess`/`ccessay`, so the spelled
-  `substring` check can't see it). It judges the edge by the **worst** per-phoneme
-  feature distance, *not* an average, so a single substituted sound can't be
-  diluted across the run — that is what keeps "Thunder"/"Plunder" (onset differs,
-  edge 0.22) and "DustyDog"/"ADustyLog" (Dog/Log tail, edge 0.38) out, both well
-  above `containMaxDist` 0.06, while exact containments score 0.00. Edges only: a
-  sequence buried in the interior is walled off and not confusable. When it fires
-  it takes precedence over the global-distance finding, and it is suppressed when
-  the spelled `substring` check already caught the same pair ("Ranger"/"Stranger").
+  `substring` check can't see it); a near-zero edge distance dominates the
+  combined score and is reported as HIGH "sound-substring". It judges the edge
+  by the **worst** per-phoneme feature distance, *not* an average, so a single
+  substituted sound can't be diluted across the run — that is what keeps
+  "Thunder"/"Plunder" (onset differs, edge 0.22) and "DustyDog"/"ADustyLog"
+  (Dog/Log tail, edge 0.38) from counting as containment (the ramp zeroes at
+  `zeroContain` 0.15) while exact containments score 0.00. Edges only: a
+  sequence buried in the interior is walled off and not confusable. The signal
+  is excluded when the spelled `substring` check already caught the same pair
+  ("Ranger"/"Stranger").
 
 ### Avoiding duplicate findings
 
-`checkPair` deliberately suppresses weaker findings already explained by a
-stronger one: phonetic containment (HIGH "sound-substring") stands in for the
-global-distance finding and is itself suppressed by the spelled `substring` check;
-a reported rhyme suppresses the raw common-suffix finding; a strong phonetic match
-(`strongSound`) suppresses rhyme/suffix; and a shared whole-word token
-(`explainsAffix`) suppresses the common-prefix/suffix findings. Preserve this
-layering when adding checks so the output stays non-redundant.
+The combined score emits at most **one** sound finding per pair, named after
+its top contributing signal, so the sound checks can no longer pile up.
+The remaining layering: Metaphone 3 is surfaced only when it warns more
+strongly than the combined verdict (and a strong Metaphone match drops a
+redundant plain-rhyme LOW); the containment signal is excluded when the spelled
+`substring` check already fired; a matching rime or a strong sound match
+(`strongSound`) suppresses the raw common-suffix finding; and a shared
+whole-word token (`explainsAffix`) suppresses the common-prefix/suffix
+findings. Preserve this layering when adding checks so the output stays
+non-redundant.
 
 ## Requirements
 

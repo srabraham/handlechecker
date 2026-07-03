@@ -71,6 +71,49 @@ func phonemeSyllableCount(s string) (int, bool) {
 	return n, true
 }
 
+// StressContour returns the stress pattern over the syllable nuclei of s — one
+// character per syllable, '1' for a stressed vowel and '0' for an unstressed
+// one ("Belize" -> "01", "Thunder" -> "10"). Two callsigns with the same
+// contour share the prosodic envelope — the rhythm cue that survives channel
+// noise best — so a matching contour is (weak) evidence of confusability. The
+// returned string is engine-derived; callers should only compare two contours
+// for equality. ok is false when espeak-ng is unavailable, s has no letters, or
+// a phoneme token is unrecognized (a partial reading is never trusted, matching
+// phonemeSyllableCount).
+func StressContour(s string) (string, bool) {
+	if lettersLower(s) == "" {
+		return "", false
+	}
+	toks, ok := Phonemes(s)
+	if !ok {
+		return "", false
+	}
+	var b strings.Builder
+	for _, t := range toks {
+		base, stressed := splitStress(t)
+		if _, known := lookupFeatures(base); !known {
+			return "", false
+		}
+		if !isSyllabic(base) {
+			continue
+		}
+		if stressed {
+			b.WriteByte('1')
+		} else {
+			b.WriteByte('0')
+		}
+		// A fused triphthong carries a second, unstressed syllable (see
+		// phonemeSyllableCount).
+		if triphthongs[base] {
+			b.WriteByte('0')
+		}
+	}
+	if b.Len() == 0 {
+		return "", false
+	}
+	return b.String(), true
+}
+
 // phonemeRhyme returns the rime — the final syllabic phoneme and everything after
 // it — from the espeak pronunciation of s, joined into a comparison key. Stress
 // marks are stripped from the key: whether the final syllable happens to carry

@@ -17,10 +17,11 @@ reference. Status keys: **[doing]** in this pass, **[ ]** proposed, **[x]** done
     match, espeak distance with Metaphone fallback.
 
 - **[ ] Restore or remove the NATO / spelling-on-air check.** `nato.go` was
-  deleted but CLAUDE.md still documents it. When a callsign is unclear it is
-  *spelled* on air, so confusability of the spelled-out form is a distinct axis
-  from how the word sounds. Either bring the check back or drop the doc
-  reference (currently dead documentation).
+  deleted but CLAUDE.md still documented it; the dead doc reference was dropped
+  2026-07. What remains open is the feature itself: when a callsign is unclear
+  it is *spelled* on air, so confusability of the spelled-out form is a
+  distinct axis from how the word sounds — decide whether to build that check
+  for real.
 
 - **[ ] Weight first-syllable distinctiveness over shared prefixes.** The start
   of a transmission is what gets clipped (PTT/VOX lag, squelch tail), so
@@ -80,7 +81,8 @@ reference. Status keys: **[doing]** in this pass, **[ ]** proposed, **[x]** done
 - **[ ] Externalize the word lists** (profanity, prowords/safety, allowlists)
   via `go:embed` text files so non-developers can tune them.
 
-- **[ ] Reconcile doc drift** in CLAUDE.md (`nato.go`, "Reserved terms").
+- **[x] Reconcile doc drift** in CLAUDE.md (`nato.go`, "Reserved terms") —
+  last stale reference (`nato.go`) dropped 2026-07.
 
 ## 5. Sound-similarity engine, round two (July 2026 review)
 
@@ -136,19 +138,30 @@ first item is the prerequisite that makes the rest safe to do.
   is deferred to the combined-score item below, where it belongs as one more
   continuous feature rather than another standalone gate.
 
-- **[ ] Combine evidence into one score; retire the threshold-gate cascade.**
-  `checkPair` is a decision tree of eight tuned constants where each false
-  positive/negative got its own gate (MED band gated on overlap, overlap gated
-  on 3+ syllables, rhyme promoted only with matching onset…). Each patch is
-  locally justified but the gates interact and every hard threshold is a cliff
-  (0.239 is MEDIUM, 0.241 is invisible). Instead: compute the signals already
-  available — global distance, overlap distance/syllables, containment edge
-  distance, onset distance, rhyme, stress match, syllable-count delta — as
-  continuous features, combine into one confusability score (hand-weighted
-  linear to start; fit against the corpus once it's big enough), and band into
-  severities at the end. Evidence then *accumulates* (three near-misses add up
-  instead of producing silence), and tuning becomes "adjust weights, check
-  precision/recall". Keep kind/detail by reporting the top contributing signals.
+- **[x] Combine evidence into one score; retire the threshold-gate cascade.**
+  Implemented in `internal/checker/score.go`: `gatherSoundSignals` measures the
+  continuous signals (global phoneme distance, containment edge distance, best
+  shared run distance + syllables, shared rime + onset distance, and the
+  stress contour — the signal deferred from the stress item above, via the new
+  `phonetic.StressContour`), `scoreSignals` converts each to a weighted
+  contribution through a linear closeness ramp (every old hard threshold is now
+  a slope) and combines them with a **noisy-OR** rather than a plain sum — so
+  evidence accumulates (Thunder/Plunder: moderate global 0.33 + clean shared
+  run 0.30 + matching contour 0.06 → 0.56 MEDIUM, where each gate alone said
+  nothing) but *redundant* evidence saturates (a rhyme adds little when the
+  global distance already says near-identical, which a linear sum would
+  double-count). The total is banded into severities at the end, the finding's
+  kind/detail names the top contributing signal (output vocabulary unchanged),
+  and `Issue.Score` carries the total for ranking. `evaluateSound` makes every
+  sound decision (including the Metaphone-escalation and suppression rules) in
+  one place consumed by both `checkPair` and `ExplainPair`, dissolving the old
+  keep-in-lockstep-by-hand problem for the sound checks; `--explain` now shows
+  each signal's measured value and contribution plus the banded total. Corpus
+  held at precision 0.97 / recall 1.00 (tuning notes in `score.go`;
+  `TestSoundScoreTable` logs the full per-pair signal/score table for future
+  retuning). One known trade noted in the band comment: Coyote/Peyote's sound
+  score lands just under the MED band (0.52 vs 0.53) — its MEDIUM verdict is
+  carried by the edit-distance check instead.
 
 Smaller, concrete gaps:
 
@@ -185,10 +198,13 @@ capture most of the value at zero runtime cost.
 
 ## This pass
 
-Implemented §5 items 1–3: the **labeled confusability corpus**, **perceptual
-channel-aware substitution costs**, and **stress-aware distances**. Next up:
-combining the evidence into one score (§5, item 4), which also picks up the
-deferred stress-contour signal.
+Implemented §5 item 4: the **combined confusability score** (noisy-OR over
+continuous signal contributions, banded at the end), including the deferred
+stress-contour signal, with `checkPair` and `ExplainPair` now sharing one
+decision path (`evaluateSound`). Also closed the §4 doc-drift item. Next up
+from §5's smaller gaps: word-level comparison for multi-word handles, or
+making the good engine always available (embedded G2P).
 
-Previous pass: proword/safety-word check (§1), phoneme-aware
-Rhyme/SyllableCount (§2), Undo in the web app (§3).
+Previous passes: labeled confusability corpus, perceptual channel-aware
+substitution costs, stress-aware distances (§5 items 1–3); proword/safety-word
+check (§1), phoneme-aware Rhyme/SyllableCount (§2), Undo in the web app (§3).

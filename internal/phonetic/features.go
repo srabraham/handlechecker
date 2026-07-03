@@ -120,8 +120,8 @@ var phonemeFeatures = map[string]artic{
 	"l":  {son: true, voi: true, cont: true, cor: true, lat: true},
 	"@L": {syl: true, son: true, voi: true, cont: true, cor: true, lat: true}, // syllabic l ("bottle")
 	"r":  {son: true, voi: true, cont: true, cor: true},
-	"w": {son: true, voi: true, cont: true, lab: true, dor: true, high: true, back: true, round: true},
-	"j": {son: true, voi: true, cont: true, dor: true, high: true},
+	"w":  {son: true, voi: true, cont: true, lab: true, dor: true, high: true, back: true, round: true},
+	"j":  {son: true, voi: true, cont: true, dor: true, high: true},
 
 	// --- monophthong vowels ---
 	"i:": {syl: true, son: true, voi: true, cont: true, high: true, tense: true},
@@ -163,7 +163,7 @@ var phonemeFeatures = map[string]artic{
 	"o@":  {syl: true, son: true, voi: true, cont: true, back: true, round: true}, // NORTH/FORCE vowel ("door")
 
 	// --- nasalized vowels (loanwords, e.g. "genre", "bon") ---
-	"A~": {syl: true, son: true, voi: true, cont: true, nas: true, low: true, back: true, tense: true},
-	"O~": {syl: true, son: true, voi: true, cont: true, nas: true, low: true, back: true, round: true, tense: true},
+	"A~":  {syl: true, son: true, voi: true, cont: true, nas: true, low: true, back: true, tense: true},
+	"O~":  {syl: true, son: true, voi: true, cont: true, nas: true, low: true, back: true, round: true, tense: true},
 	"aI@": {syl: true, son: true, voi: true, cont: true, low: true, tense: true},
 }

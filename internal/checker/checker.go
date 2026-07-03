@@ -48,9 +48,10 @@ type Issue struct {
 	Detail   string
 	// Score ranks how problematic this finding is relative to others at the same
 	// severity (higher = worse); it is the secondary sort key within a severity
-	// band. Sound findings set it from their phoneme distance (1-distance) so the
-	// closest-sounding conflicts rise to the top of their band; findings without a
-	// continuous metric leave it at 0 and keep their existing relative order.
+	// band. Sound findings set it to their combined confusability score (see
+	// score.go) so the closest-sounding conflicts rise to the top of their band;
+	// findings without a continuous metric leave it at 0 and keep their existing
+	// relative order.
 	Score float64
 }
 
@@ -155,75 +156,6 @@ func checkSingle(c string) []Issue {
 	return issues
 }
 
-// Phoneme-distance thresholds (from espeak-ng), tuned against a battery of
-// real pronunciations: at or below High the words sound nearly identical
-// (e.g. Gold/Cold = 0.02), at or below Med they sound similar (e.g. Gold/Gild
-// = 0.13, Blaze/Belize = 0.13).
-const (
-	phonemeHighMax = 0.06
-	phonemeMedMax  = 0.24
-)
-
-// A global phoneme distance in the MED band only means "sound similar" when the
-// two callsigns actually share a clean, contiguous run of sounds. Without one,
-// a moderate distance is just diffuse, coincidental partial-feature overlap
-// scattered across two short words — not confusable on the air. So a MED-band
-// finding is confirmed only when the best local alignment (PhoneticOverlap) is
-// at least this clean. The cutoff sits above genuine catches (Gold/Gild 0.13,
-// Blaze/Belize 0.13, Thunder/Plunder 0.04) and below the noise the global
-// distance alone lets through (HawkEye/Fowler and Tulsa/Minty — globally
-// in-band at 0.20–0.22, but their best shared runs match no better than 0.20).
-const similarOverlapMax = 0.15
-
-// Phonetic containment (one callsign's whole pronunciation heard at an edge of
-// the other, e.g. "CCS" at the front of "CCEssay") is flagged HIGH — the spoken
-// analogue of the written "substring" check — only when that contained run is
-// near-perfect. The bar must stay below near-miss edges — a single substituted
-// sound keeps the worst-per-phoneme edge distance high ("Thunder" at the tail
-// of "Plunder" scores 0.22, "DustyDog" against "ADustyLog" 0.38) — so a partial
-// overlap can't masquerade as containment.
-const containMaxDist = 0.06
-
-// A shared run of sounds (local alignment) is flagged when it spans at least
-// this many syllables and matches at least this cleanly (normalized distance
-// within the run). This catches pairs whose global distance looks safe only
-// because they differ at the edges, e.g. "DustyDog" / "ADustyLog" — whose shared
-// "Dust-y-Dog"/"Dust-y-Log" run is three syllables. PhoneticOverlap additionally
-// requires the run to contain a whole word on one side, so an interior-only match
-// (e.g. "Abraham" / "Zebra" sharing "-bra-") does not count.
-//
-// The floor is 3, not 2, on purpose. A two-syllable run is too short to be a
-// reliable signal here: short words that merely share a liquid+vowel skeleton
-// align cleanly enough to slip under overlapMaxDist (e.g. "Tulsa" vs the "Delta"
-// of "Delta Victor" at 0.07 — a global-safe pair this is the *only* check to
-// flag), yet they are not confusable on the air. Tightening overlapMaxDist can't
-// fix that: those false positives score *lower* (cleaner) than the genuine
-// three-syllable catches. The two-syllable matches worth keeping are already
-// caught by the edit-distance, substring, or global-phoneme checks, so raising
-// the floor sheds the noise without losing real conflicts.
-const (
-	overlapMinSyllables = 3
-	overlapMaxDist      = 0.12
-)
-
-// A rhyme is promoted from a bare LOW finding to a MEDIUM "sound-similar" one
-// when the two callsigns also share an opening this closely (normalized onset-
-// consonant distance, see phonetic.SharedOpening). Sharing both ends — opening
-// and rhyme — leaves only the middle to tell them apart, which the ear easily
-// misses even when the whole-word distance looks safe. The bar is near-identical:
-// it admits a shared /h/ ("Hot Guy"/"HawkEye", 0.00) but not a merely close onset
-// like /m/ vs /b/ ("Monsoon"/"Balloon", 0.21), which only coincidentally rhymes.
-const openingMaxDist = 0.10
-
-// Ranking distance for a rhyme+opening "sound-similar" finding. This finding has
-// no single global phoneme distance to score by — it is promoted precisely
-// because the whole-word distance is inflated by an interior consonant (the /g/
-// of "Guy" in "Hot Guy"/"HawkEye") even though both ends match. Without a Score
-// it would sort to the bottom of the MEDIUM band beneath every phoneme finding;
-// matching both ends is a strong signal, so we rank it as if ~0.10 distant, near
-// the top of the band (Score = 1-dist = 0.90).
-const rhymeOpeningRankDist = 0.10
-
 // metaphoneSound returns the strongest Metaphone-3 sound finding for the pair,
 // with ok=false if none. Buckets mirror the phoneme-distance ones: a matching
 // key (with or without vowel positions) is "sound-alike" (HIGH), a shared
@@ -257,11 +189,11 @@ func checkPair(a, b string) []Issue {
 	add := func(sev Severity, kind, detail string) {
 		issues = append(issues, Issue{A: a, B: b, Severity: sev, Kind: kind, Detail: detail})
 	}
-	// addSound is add for findings carrying a phoneme distance: Score is set to
-	// 1-distance so that, among same-severity sound findings, the closest match
-	// (smallest distance) sorts to the top.
-	addSound := func(sev Severity, kind, detail string, dist float64) {
-		issues = append(issues, Issue{A: a, B: b, Severity: sev, Kind: kind, Detail: detail, Score: 1 - dist})
+	// addSound is add for the combined-score sound finding: Score carries the
+	// confusability score so that, among same-severity sound findings, the
+	// closest match sorts to the top.
+	addSound := func(sev Severity, kind, detail string, score float64) {
+		issues = append(issues, Issue{A: a, B: b, Severity: sev, Kind: kind, Detail: detail, Score: score})
 	}
 
 	// Identical (ignoring case/punctuation/spacing).
@@ -305,88 +237,28 @@ func checkPair(a, b string) []Issue {
 		add(SevMedium, "common-prefix",
 			fmt.Sprintf("start with the same %d letters (%q); they sound alike on first syllable", pre, na[:pre]))
 	}
-	// Phonetic: the most important radio concern — sounding the same. We run two
-	// engines and would rather over-warn than miss a conflict:
-	//   1. Phoneme distance (espeak-ng) — precise and vowel-aware (it can tell
-	//      "Gold" from "Gild"). The primary signal when espeak-ng is installed.
-	//   2. Metaphone 3 — a vowel-collapsing consonant-skeleton match. Always
-	//      consulted; on its own when espeak-ng is unavailable, and *alongside*
-	//      the phoneme distance otherwise so a consonant clash that espeak rates
-	//      as distant still surfaces.
-	// phonemeSev tracks the severity the phoneme engine assigned (-1 if it stayed
-	// silent or is unavailable); Metaphone is then only surfaced when it warns
-	// more strongly than that, so the two engines never emit duplicate findings.
-	strongSound := false
-	phonemeSev := Severity(-1)
-	// Phonetic containment: one callsign's whole pronunciation heard at the start
-	// or end of the other (the spoken analogue of "substring"). Flagged HIGH, and
-	// suppressed when the written substring check already said the same thing — it
-	// earns its keep on pairs whose spellings share nothing ("CCS"/"CCEssay"). When
-	// it fires it stands in for the global-distance finding below.
-	if cdist, ok := phonetic.PhoneticContainment(sa, sb); ok && cdist <= containMaxDist && !substr {
-		addSound(SevHigh, "sound-substring", fmt.Sprintf(
-			"one sounds like the whole of the other (contained pronunciation, edge distance %.2f via espeak-ng)", cdist), cdist)
-		phonemeSev = SevHigh
+	// Phonetic: the most important radio concern — sounding the same. All the
+	// sound decisions are made once in evaluateSound (score.go): the combined
+	// confusability score over the espeak-ng signals (global distance,
+	// containment, shared run, rhyme+onset, stress contour) yields at most one
+	// sound finding, and Metaphone 3 — always consulted — is surfaced only when
+	// it warns more strongly, so the two engines never emit duplicate findings.
+	// When espeak-ng is unavailable Metaphone is the only sound engine, plus the
+	// spelling-heuristic rhyme.
+	snd := evaluateSound(sa, sb, substr)
+	if snd.verdictFired {
+		addSound(snd.verdict.sev, snd.verdict.kind, snd.verdict.detail, snd.verdict.total)
 	}
-	if d, ok := phonetic.PhoneticDistance(sa, sb); ok && phonemeSev < 0 {
-		// The best shared run of sounds (local alignment). It both confirms a
-		// moderate global distance is a real similarity (similarOverlapMax) and, on
-		// its own, catches a shared multi-syllable core the global distance dilutes.
-		ovSyl, ovDist, ovOK := phonetic.PhoneticOverlap(sa, sb)
-		switch {
-		case d <= phonemeHighMax:
-			addSound(SevHigh, "sound-alike", fmt.Sprintf("sound nearly identical (phoneme distance %.2f via espeak-ng)", d), d)
-			phonemeSev = SevHigh
-		case d <= phonemeMedMax && ovOK && ovDist <= similarOverlapMax:
-			// Moderate global distance *and* a clean shared run: genuinely similar.
-			// A moderate distance with no clean run is coincidental and dropped here.
-			addSound(SevMedium, "sound-similar", fmt.Sprintf("sound similar (phoneme distance %.2f via espeak-ng)", d), d)
-			phonemeSev = SevMedium
-		}
-		// Even when the words differ overall, a shared multi-syllable run of
-		// sounds (e.g. both contain "Dusty") is easily confused on the air.
-		if phonemeSev < 0 && ovOK && ovSyl >= overlapMinSyllables && ovDist <= overlapMaxDist {
-			addSound(SevMedium, "sound-overlap", fmt.Sprintf(
-				"share a %d-syllable run of sounds (distance %.2f via espeak-ng); easily confused on the air", ovSyl, ovDist), ovDist)
-			phonemeSev = SevMedium
-		}
+	if snd.metaphoneFired {
+		add(snd.msev, snd.mkind, snd.mdetail)
 	}
-	if phonemeSev >= SevMedium {
-		strongSound = true
-	}
-	// Metaphone 3, always consulted. Surfaced only when it warns more strongly
-	// than the phoneme verdict (phonemeSev is -1 when espeak-ng is unavailable, so
-	// every Metaphone finding shows in that case — the former fallback behavior).
-	if msev, mkind, mdetail, mok := metaphoneSound(sa, sb); mok && msev > phonemeSev {
-		add(msev, mkind, mdetail)
-		if msev >= SevMedium {
-			strongSound = true
-		}
+	if snd.fallbackRhyme {
+		add(SevLow, "rhyme", fmt.Sprintf("rhyme (both end with the %q sound)", snd.rime))
 	}
 
-	// Rhyme: same final vowel sound. Takes precedence over a raw common suffix,
-	// which is usually just describing the same rhyme.
-	ra, rb := phonetic.Rhyme(sa), phonetic.Rhyme(sb)
-	rhyme := !strongSound && ra != "" && ra == rb && len(ra) >= 2
-	if rhyme {
-		// A rhyme paired with a matching opening (the same onset consonant) means
-		// the callsigns are alike at both ends with only the middle differing —
-		// confusable on the air even when the whole-word phoneme distance looks safe
-		// because one carries an extra interior consonant (e.g. "Hot Guy"/"HawkEye",
-		// inflated by the /g/ of "Guy"). Promote those to sound-similar (MEDIUM); a
-		// rhyme with a different opening stays a bare rhyme (LOW). When espeak-ng is
-		// unavailable SharedOpening reports ok=false and the finding stays LOW.
-		if od, ok := phonetic.SharedOpening(sa, sb); ok && od <= openingMaxDist {
-			addSound(SevMedium, "sound-similar", fmt.Sprintf(
-				"open alike and rhyme (both end with the %q sound); easily confused on the air", ra), rhymeOpeningRankDist)
-		} else {
-			add(SevLow, "rhyme", fmt.Sprintf("rhyme (both end with the %q sound)", ra))
-		}
-	}
-
-	// Shared trailing letters, when not already explained by a shared word or
-	// by a reported rhyme.
-	if suf := commonSuffixLen(na, nb); suf >= 3 && !rhyme && !strongSound && !explainsAffix(shared, na[len(na)-suf:]) {
+	// Shared trailing letters, when not already explained by a shared word, a
+	// matching rime, or a strong sound match.
+	if suf := commonSuffixLen(na, nb); suf >= 3 && snd.rime == "" && !snd.strongSound && !explainsAffix(shared, na[len(na)-suf:]) {
 		add(SevLow, "common-suffix",
 			fmt.Sprintf("end with the same %d letters (%q)", suf, na[len(na)-suf:]))
 	}

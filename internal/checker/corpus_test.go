@@ -83,7 +83,7 @@ func flaggedConfusable(a, b string) (bool, []Issue) {
 }
 
 // Precision/recall floors for the corpus, with espeak-ng available. Measured
-// performance when the floors were last set (2026-07, 28 confusable / 21
+// performance when the floors were last set (2026-07, 30 confusable / 21
 // distinct pairs): precision 0.97, recall 1.00. The one known false positive is
 // Sweet/Swat (Metaphone's vowel-collapsing escalation plus the coarse binary
 // vowel features — commented in the corpus file); there are no known misses.

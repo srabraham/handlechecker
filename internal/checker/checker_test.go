@@ -218,8 +218,8 @@ func TestExplainMatchesCheckPair(t *testing.T) {
 	assertExplainConsistent(t, "G0LD", "GOLD")
 	assertExplainConsistent(t, "Thunder", "Plunder")
 	assertExplainConsistent(t, "GoldWing", "goldwing")
-	assertExplainConsistent(t, "CCS", "CCEssay")      // phonetic containment (HIGH)
-	assertExplainConsistent(t, "Ranger", "Stranger")  // spelled substring suppresses sound-substring
+	assertExplainConsistent(t, "CCS", "CCEssay")        // phonetic containment (HIGH)
+	assertExplainConsistent(t, "Ranger", "Stranger")    // spelled substring suppresses sound-substring
 	assertExplainConsistent(t, "DustyDog", "ADustyLog") // near-miss, not containment
 }
 
@@ -298,9 +298,11 @@ func TestSoundSubstringSuppressedBySpelling(t *testing.T) {
 	}
 }
 
-// TestSoundSubstringRejectsNearMiss guards the distance bar: "DustyDog" and
-// "ADustyLog" share a whole run at an edge, but the "Dog"/"Log" tail makes it a
-// near-miss (~0.075), above containMaxDist, so it must NOT be called containment.
+// TestSoundSubstringRejectsNearMiss guards the containment bar: "DustyDog" and
+// "ADustyLog" share a whole run at an edge, but the "Dog"/"Log" tail keeps the
+// worst-per-phoneme edge distance high (0.38, far past zeroContain), so the
+// containment signal contributes nothing and the pair must NOT be reported as
+// a sound-substring (it is flagged via its shared run/global distance instead).
 func TestSoundSubstringRejectsNearMiss(t *testing.T) {
 	if !phonetic.PhonemesAvailable() {
 		t.Skip("espeak-ng not installed; phonetic containment needs the phoneme engine")

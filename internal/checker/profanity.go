@@ -78,13 +78,20 @@ func checkProfanity(c string) []Issue {
 	return nil
 }
 
+// soundsLikeMax is the phoneme distance at or below which a token counts as
+// sounding like a listed word (swear word, proword): near-identical
+// pronunciations only (e.g. Gold/Cold measure 0.02), tuned against the same
+// battery as the pairwise thresholds once was — a looser bar would let the
+// over-eager safety checks fire on merely similar words.
+const soundsLikeMax = 0.06
+
 // soundsLikeWord reports whether token tok sounds like the word w, using the
 // same two-engine strategy as checkPair: the precise espeak-ng phoneme distance
 // when available (so vowels distinguish "Sheet" from "Shit"), and the
 // vowel-collapsing Metaphone 3 match as the fallback.
 func soundsLikeWord(tok, w string) bool {
 	if d, ok := phonetic.PhoneticDistance(tok, w); ok {
-		return d <= phonemeHighMax
+		return d <= soundsLikeMax
 	}
 	return phonetic.SoundsAlike(tok, w)
 }

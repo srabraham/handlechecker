@@ -92,115 +92,101 @@ func ExplainPair(a, b string) []CheckExplanation {
 		add("shared opening letters", false, 0, fmt.Sprintf("share %d leading letters (need >= 3)", pre))
 	}
 
-	// --- sound: containment, then phoneme distance + overlap, then Metaphone 3 --
-	strongSound := false
-	phonemeSev := Severity(-1)
-
-	// Phonetic containment — the spoken analogue of the spelled "substring" check.
-	if cdist, ok := phonetic.PhoneticContainment(sa, sb); !ok {
-		add("phonetic containment", false, 0, "espeak-ng unavailable")
-	} else if cdist <= containMaxDist && !substr {
-		add("phonetic containment", true, SevHigh,
-			fmt.Sprintf("one sounds like the whole of the other (edge distance %.2f <= %.2f)", cdist, containMaxDist))
-		phonemeSev = SevHigh
-	} else if cdist <= containMaxDist {
-		add("phonetic containment", false, 0,
-			fmt.Sprintf("one sounds contained in the other (edge distance %.2f), but the spelled substring check already says so", cdist))
+	// --- sound: the combined confusability score, plus Metaphone 3 --------------
+	// All decisions come from evaluateSound (score.go) — the same call checkPair
+	// makes — so the explanation cannot drift from the real findings. The signal
+	// entries below are context (never fired); the "combined sound score" entry
+	// is the one that fires.
+	snd := evaluateSound(sa, sb, substr)
+	if !snd.espeakOK {
+		add("combined sound score", false, 0, "espeak-ng unavailable — sound check falls back to Metaphone 3")
 	} else {
-		add("phonetic containment", false, 0,
-			fmt.Sprintf("neither pronunciation is heard whole at an edge of the other (best edge distance %.2f > %.2f)", cdist, containMaxDist))
+		sig, c := snd.verdict.sig, snd.verdict.contrib
+		if substr {
+			add("phonetic containment", false, 0,
+				"excluded — the spelled substring check already covers a contained pronunciation")
+		} else if sig.contain >= 1 {
+			add("phonetic containment", false, 0, "neither pronunciation is heard whole at an edge of the other")
+		} else {
+			add("phonetic containment", false, 0, fmt.Sprintf(
+				"one heard at an edge of the other with edge distance %.2f — contributes %.2f", sig.contain, c.contain))
+		}
+		add("phoneme distance (espeak-ng)", false, 0, fmt.Sprintf(
+			"global distance %.2f — contributes %.2f", sig.dist, c.global))
+		if sig.ovDist >= 1 {
+			add("shared sound run", false, 0, "no clean shared run of sounds — contributes 0.00")
+		} else {
+			add("shared sound run", false, 0, fmt.Sprintf(
+				"best shared run spans %d syllable(s) at distance %.2f — contributes %.2f", sig.ovSyl, sig.ovDist, c.overlap))
+		}
+		if sig.rime == "" {
+			ra, rb := phonetic.Rhyme(sa), phonetic.Rhyme(sb)
+			if ra != "" && ra == rb {
+				add("rhyme + opening", false, 0, fmt.Sprintf(
+					"share only a bare final vowel (%q), too slight to count as a rhyme — contributes 0.00", ra))
+			} else {
+				add("rhyme + opening", false, 0, fmt.Sprintf("rimes differ (%q vs %q) — contributes 0.00", ra, rb))
+			}
+		} else if sig.onset < 1 {
+			add("rhyme + opening", false, 0, fmt.Sprintf(
+				"rhyme (both end with the %q sound) with onset distance %.2f — contributes %.2f", sig.rime, sig.onset, c.ends))
+		} else {
+			add("rhyme + opening", false, 0, fmt.Sprintf(
+				"rhyme (both end with the %q sound), openings unshared — contributes %.2f", sig.rime, c.ends))
+		}
+		if sig.contour != "" {
+			add("stress contour", false, 0, fmt.Sprintf(
+				"same stress contour (%q) — contributes %.2f", sig.contour, c.contour))
+		} else {
+			add("stress contour", false, 0, "stress contours differ (or too short to count) — contributes 0.00")
+		}
+
+		switch {
+		case snd.verdictFired:
+			add("combined sound score", true, snd.verdict.sev,
+				fmt.Sprintf("score %.2f (HIGH >= %.2f, MEDIUM >= %.2f) — %s", snd.verdict.total, scoreHigh, scoreMed, snd.verdict.detail))
+		case snd.verdict.fired:
+			// Fired on its own terms but dropped: a stronger Metaphone finding
+			// explains the plain rhyme (see evaluateSound).
+			add("combined sound score", false, 0, fmt.Sprintf(
+				"score %.2f is a plain rhyme (LOW), suppressed — the Metaphone 3 finding below already explains the pair", snd.verdict.total))
+		case snd.verdict.total >= scoreLow && snd.verdict.total < scoreMed:
+			add("combined sound score", false, 0, fmt.Sprintf(
+				"score %.2f is below MEDIUM (%.2f) and the pair does not rhyme, so nothing is reported", snd.verdict.total, scoreMed))
+		default:
+			add("combined sound score", false, 0, fmt.Sprintf(
+				"score %.2f is below every band (MEDIUM %.2f, rhyme-only LOW %.2f)", snd.verdict.total, scoreMed, scoreLow))
+		}
 	}
 
-	d, dok := phonetic.PhoneticDistance(sa, sb)
-	ovSyl, ovDist, ovOK := phonetic.PhoneticOverlap(sa, sb)
+	// Metaphone 3, surfaced only when it warns more strongly than the combined
+	// verdict.
 	switch {
-	case !dok:
-		add("phoneme distance (espeak-ng)", false, 0, "espeak-ng unavailable — sound check falls back to Metaphone 3")
-		add("shared sound run", false, 0, "espeak-ng unavailable")
-	case phonemeSev >= SevHigh:
-		// Containment already flagged the pair; checkPair skips the rest.
-		add("phoneme distance (espeak-ng)", false, 0,
-			fmt.Sprintf("distance %.2f — moot, phonetic containment already flagged the pair", d))
-		add("shared sound run", false, 0,
-			fmt.Sprintf("best run %d syllable(s) at distance %.2f — moot, containment already flagged the pair", ovSyl, ovDist))
+	case snd.metaphoneFired:
+		add("Metaphone 3", true, snd.msev, snd.mdetail)
+	case snd.mok:
+		add("Metaphone 3", false, 0, fmt.Sprintf("%s, but the phoneme engine already rates the pair at least as strongly", snd.mkind))
 	default:
-		switch {
-		case d <= phonemeHighMax:
-			add("phoneme distance (espeak-ng)", true, SevHigh,
-				fmt.Sprintf("distance %.2f <= %.2f — sound nearly identical", d, phonemeHighMax))
-			phonemeSev = SevHigh
-		case d <= phonemeMedMax && ovOK && ovDist <= similarOverlapMax:
-			add("phoneme distance (espeak-ng)", true, SevMedium,
-				fmt.Sprintf("distance %.2f <= %.2f with a clean shared run (overlap %.2f <= %.2f) — sound similar",
-					d, phonemeMedMax, ovDist, similarOverlapMax))
-			phonemeSev = SevMedium
-		case d <= phonemeMedMax:
-			add("phoneme distance (espeak-ng)", false, 0,
-				fmt.Sprintf("distance %.2f <= %.2f but no clean shared run (overlap %.2f > %.2f) — coincidental, not flagged",
-					d, phonemeMedMax, ovDist, similarOverlapMax))
-		default:
-			add("phoneme distance (espeak-ng)", false, 0,
-				fmt.Sprintf("distance %.2f > %.2f — too far apart", d, phonemeMedMax))
-		}
-
-		// Shared multi-syllable run. checkPair only considers it when the global
-		// distance did not already flag the pair.
-		switch {
-		case phonemeSev >= SevMedium:
-			add("shared sound run", false, 0,
-				fmt.Sprintf("best run %d syllable(s) at distance %.2f — moot, the phoneme distance already flagged the pair", ovSyl, ovDist))
-		case ovOK && ovSyl >= overlapMinSyllables && ovDist <= overlapMaxDist:
-			add("shared sound run", true, SevMedium,
-				fmt.Sprintf("share a %d-syllable run of sounds (distance %.2f <= %.2f)", ovSyl, ovDist, overlapMaxDist))
-			phonemeSev = SevMedium
-		default:
-			add("shared sound run", false, 0,
-				fmt.Sprintf("best run %d syllable(s) at distance %.2f (need >= %d syllables and <= %.2f)",
-					ovSyl, ovDist, overlapMinSyllables, overlapMaxDist))
-		}
-	}
-	if phonemeSev >= SevMedium {
-		strongSound = true
-	}
-
-	// Metaphone 3, surfaced only when it warns more strongly than the phoneme verdict.
-	if msev, mkind, mdetail, mok := metaphoneSound(sa, sb); mok && msev > phonemeSev {
-		add("Metaphone 3", true, msev, mdetail)
-		if msev >= SevMedium {
-			strongSound = true
-		}
-	} else if mok {
-		add("Metaphone 3", false, 0, fmt.Sprintf("%s, but the phoneme engine already rates the pair at least as strongly", mkind))
-	} else {
 		add("Metaphone 3", false, 0, "no matching consonant skeleton")
 	}
 
-	// Rhyme, and its promotion to sound-similar when the openings also match.
-	ra, rb := phonetic.Rhyme(sa), phonetic.Rhyme(sb)
-	rimesMatch := ra != "" && ra == rb && len(ra) >= 2
-	od, ook := phonetic.SharedOpening(sa, sb)
-	rhymeFired := rimesMatch && !strongSound
-	switch {
-	case rimesMatch && strongSound:
-		add("rhyme", false, 0, fmt.Sprintf("both end with the %q sound, but suppressed — a stronger sound finding already explains the pair", ra))
-	case rhymeFired && ook && od <= openingMaxDist:
-		add("rhyme + shared opening", true, SevMedium,
-			fmt.Sprintf("open alike (onset distance %.2f <= %.2f) and rhyme (both end with the %q sound) — alike at both ends", od, openingMaxDist, ra))
-	case rhymeFired && ook:
-		add("rhyme", true, SevLow,
-			fmt.Sprintf("both end with the %q sound; openings differ (onset distance %.2f > %.2f), so it stays a plain rhyme", ra, od, openingMaxDist))
-	case rhymeFired:
-		add("rhyme", true, SevLow, fmt.Sprintf("both end with the %q sound (opening comparison needs espeak-ng)", ra))
-	case ra == "" || rb == "":
-		add("rhyme", false, 0, "could not determine a rime for one callsign")
-	default:
-		add("rhyme", false, 0, fmt.Sprintf("rimes differ (%q vs %q)", ra, rb))
+	// Rhyme on the Metaphone-fallback path (with espeak-ng the rhyme is a signal
+	// inside the combined score above).
+	if !snd.espeakOK {
+		switch {
+		case snd.fallbackRhyme:
+			add("rhyme", true, SevLow, fmt.Sprintf("both end with the %q sound (spelling heuristic)", snd.rime))
+		case snd.rime != "":
+			add("rhyme", false, 0, fmt.Sprintf("both end with the %q sound, but suppressed — a stronger sound finding already explains the pair", snd.rime))
+		default:
+			add("rhyme", false, 0, "the rimes differ (spelling heuristic)")
+		}
 	}
 
-	// Shared ending letters (only when not already explained by a rhyme, a strong
-	// sound match, or a shared whole word).
+	// Shared ending letters (only when not already explained by a matching rime,
+	// a strong sound match, or a shared whole word).
 	switch suf := commonSuffixLen(na, nb); {
-	case suf >= 3 && !rhymeFired && !strongSound && !explainsAffix(shared, na[len(na)-suf:]):
+	case suf >= 3 && snd.rime == "" && !snd.strongSound && !explainsAffix(shared, na[len(na)-suf:]):
 		add("shared ending letters", true, SevLow, fmt.Sprintf("end with the same %d letters (%q)", suf, na[len(na)-suf:]))
 	case suf >= 3:
 		add("shared ending letters", false, 0,
