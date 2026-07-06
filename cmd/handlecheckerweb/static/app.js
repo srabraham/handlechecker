@@ -49,6 +49,17 @@
 
 const STORAGE_KEY = "handlechecker.state.v1";
 
+// One-shot flag: set the first time we auto-load the default Reserved handles
+// into the setup textarea, so we never do it again. Its presence — not the
+// textarea's contents — is what gates the auto-load, so once the user has been
+// offered the defaults they can clear the field and it stays cleared. A full
+// Reset clears the flag, so reset returns the app to a first-visit state.
+const RESERVED_DEFAULTS_KEY = "handlechecker.reservedDefaultsLoaded.v1";
+
+// The server-provided default Reserved handles, fetched once at startup. Empty
+// string when none are configured (or the fetch failed).
+let reservedDefaultsText = "";
+
 // Application state. `existing` is the fixed baseline of already-approved
 // handles; session approvals accumulate in `approved` (not `existing`) but are
 // still checked against, so later candidates are vetted against earlier ones.
@@ -217,17 +228,17 @@ function backToSetup() {
 }
 
 // setupReservedDefaults wires up the "Load defaults" button beside the Reserved
-// handles textarea. The defaults come from the server (GET
-// /api/defaults/reserved), which only returns them when an operator has supplied
-// a defaults file; otherwise it 404s and we leave the button hidden. The fetched
-// text is cached so the click fills the textarea instantly.
+// handles textarea, and on the user's first visit auto-fills the textarea with
+// those defaults. The defaults come from the server (GET /api/defaults/reserved),
+// which only returns them when an operator has supplied a defaults file;
+// otherwise it 404s and we leave the button hidden. The fetched text is cached so
+// the click fills the textarea instantly.
 /** @returns {Promise<void>} */
 async function setupReservedDefaults() {
-  let text = "";
   try {
     const resp = await fetch("/api/defaults/reserved");
     if (!resp.ok) return; // 404 = no defaults configured; keep the button hidden
-    text = await resp.text();
+    reservedDefaultsText = await resp.text();
   } catch {
     return; // network/server error: silently leave the button hidden
   }
@@ -240,8 +251,26 @@ async function setupReservedDefaults() {
       message: "This replaces the current Reserved handles with the defaults.",
       confirmLabel: "Replace",
     }))) return;
-    ta.value = text;
+    ta.value = reservedDefaultsText;
   });
+
+  maybePrefillReservedDefaults();
+}
+
+// maybePrefillReservedDefaults fills the Reserved textarea with the server
+// defaults on the user's first visit, so they start from the standard baseline
+// instead of a blank field. It runs once ever (guarded by RESERVED_DEFAULTS_KEY,
+// which it sets): if the user then clears the field, it stays cleared. A full
+// Reset clears the flag, so reset returns to this first-visit prefill. The
+// empty-field check avoids clobbering handles already entered/restored, and the
+// no-op when defaults are unconfigured leaves the flag unset so a later-added
+// defaults file still prefills. Safe to call before the fetch resolves.
+function maybePrefillReservedDefaults() {
+  if (!reservedDefaultsText) return;
+  if (localStorage.getItem(RESERVED_DEFAULTS_KEY)) return;
+  if ($("reserved").value.trim()) return;
+  localStorage.setItem(RESERVED_DEFAULTS_KEY, "1");
+  $("reserved").value = reservedDefaultsText;
 }
 
 // --- review phase ------------------------------------------------------------
@@ -454,11 +483,15 @@ async function reset() {
     danger: true,
   }))) return;
   localStorage.removeItem(STORAGE_KEY);
+  // Also clear the one-shot flag so reset returns to a first-visit state,
+  // re-prefilling the Reserved defaults below.
+  localStorage.removeItem(RESERVED_DEFAULTS_KEY);
   state = { reserved: [], existing: [], proposed: [], queueIndex: 0, approved: [], rejected: [], history: [] };
   $("reserved").value = "";
   $("existing").value = "";
   $("proposed").value = "";
   $("setupSummary").textContent = "";
+  maybePrefillReservedDefaults();
   show("setup");
 }
 
