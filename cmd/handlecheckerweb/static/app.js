@@ -11,8 +11,20 @@
 /**
  * One reviewed decision, retained so it can be undone.
  * @typedef {Object} HistoryEntry
- * @property {"approve"|"reject"} action
- * @property {string} candidate
+ * @property {"approve"|"reject"|"skip"} action
+ * @property {number} slot        Index into state.slots.
+ * @property {string} candidate   The handle decided ("" for skip).
+ */
+
+/**
+ * One person's ranked candidates and review outcome. `candidates[tried]` is
+ * the attempt currently under review; `tried` counts rejections, so the slot
+ * is exhausted when tried reaches candidates.length without an approval.
+ * @typedef {Object} Slot
+ * @property {string[]} candidates  Ranked handles, first pick first; ad-hoc backups append.
+ * @property {number} tried         How many of candidates have been rejected.
+ * @property {string} approved      The winning handle ("" while none).
+ * @property {boolean} skipped      True when the user gave up on this person.
  */
 
 /**
@@ -20,8 +32,8 @@
  * @typedef {Object} State
  * @property {string[]} reserved
  * @property {string[]} existing   Baseline already-approved handles (never grows during review).
- * @property {string[]} proposed   The review queue.
- * @property {number} queueIndex
+ * @property {Slot[]} slots        The review queue: one slot per person.
+ * @property {number} slotIndex
  * @property {string[]} approved   Candidates approved this session.
  * @property {string[]} rejected   Candidates rejected this session.
  * @property {HistoryEntry[]} history
@@ -67,11 +79,11 @@ let reservedDefaultsText = "";
 let state = {
   reserved: [],
   existing: [],   // baseline already-approved handles (fixed during review)
-  proposed: [],   // the review queue
-  queueIndex: 0,
+  slots: [],      // the review queue: one slot per person
+  slotIndex: 0,
   approved: [],   // candidates approved this session
   rejected: [],   // candidates rejected this session
-  history: [],    // decision log, for Undo: {action, candidate}
+  history: [],    // decision log, for Undo: {action, slot, candidate}
 };
 
 // --- DOM helpers -------------------------------------------------------------
@@ -113,6 +125,38 @@ function parseList(raw) {
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(t);
+  }
+  return out;
+}
+
+// parseSlots splits the proposed-handles textarea into review slots: one line
+// per person, holding that person's ranked candidates (first pick first)
+// separated by commas or tabs — so a pasted CSV row or spreadsheet row works
+// as-is, and a plain one-per-line list yields one-candidate slots. Candidates
+// are de-duplicated case-insensitively within a line only; the same handle on
+// two people's lines is legitimate contention and the check itself will flag
+// the loser once the winner is approved.
+/**
+ * @param {string} raw
+ * @returns {Slot[]}
+ */
+function parseSlots(raw) {
+  const out = [];
+  for (const line of raw.split("\n")) {
+    const seen = new Set();
+    /** @type {string[]} */
+    const candidates = [];
+    for (const tok of line.split(/[,\t]/)) {
+      const t = tok.trim();
+      if (!t) continue;
+      const key = t.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      candidates.push(t);
+    }
+    if (candidates.length > 0) {
+      out.push({ candidates, tried: 0, approved: "", skipped: false });
+    }
   }
   return out;
 }
@@ -190,13 +234,59 @@ function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return false;
-    const s = JSON.parse(raw);
-    if (!s || !Array.isArray(s.proposed)) return false;
+    let s = JSON.parse(raw);
+    if (s && Array.isArray(s.proposed)) s = migrateV1(s);
+    if (!s || !Array.isArray(s.slots)) return false;
     state = Object.assign(state, s);
-    return state.proposed.length > 0;
+    return state.slots.length > 0;
   } catch {
     return false;
   }
+}
+
+// migrateV1 converts a persisted state from before the per-person slot model
+// (a flat `proposed` queue plus `queueIndex`) into the current shape: each
+// proposed handle becomes a one-candidate slot, with handles the user already
+// decided marked from the approved/rejected lists (a v1 rejection resolved its
+// person, hence skipped). History entries gain their slot index — v1 queues
+// were de-duplicated, so a candidate names its slot uniquely.
+/**
+ * @param {any} s
+ * @returns {State|null}
+ */
+function migrateV1(s) {
+  /** @type {string[]} */
+  const proposed = s.proposed;
+  const queueIndex = typeof s.queueIndex === "number" ? s.queueIndex : 0;
+  const approved = Array.isArray(s.approved) ? s.approved : [];
+  const rejected = Array.isArray(s.rejected) ? s.rejected : [];
+  const slots = proposed.map((c, i) => {
+    const wasRejected = i < queueIndex && hasCI(rejected, c);
+    return {
+      candidates: [c],
+      tried: wasRejected ? 1 : 0,
+      approved: i < queueIndex && hasCI(approved, c) ? c : "",
+      skipped: wasRejected,
+    };
+  });
+  /** @type {{action: "approve"|"reject", candidate: string}[]} */
+  const v1History = Array.isArray(s.history) ? s.history : [];
+  const history = v1History
+    .map((h) => ({
+      action: h.action,
+      candidate: h.candidate,
+      slot: proposed.findIndex((c) => c.toLowerCase() === h.candidate.toLowerCase()),
+    }))
+    .filter((h) => h.slot >= 0);
+  return {
+    reserved: Array.isArray(s.reserved) ? s.reserved : [],
+    existing: Array.isArray(s.existing) ? s.existing : [],
+    slots,
+    slotIndex: queueIndex,
+    approved,
+    rejected,
+    history,
+  };
 }
 
 // --- setup phase -------------------------------------------------------------
@@ -204,13 +294,13 @@ function load() {
 function startReview() {
   state.reserved = parseList($("reserved").value);
   state.existing = parseList($("existing").value);
-  state.proposed = parseList($("proposed").value);
-  state.queueIndex = 0;
+  state.slots = parseSlots($("proposed").value);
+  state.slotIndex = 0;
   state.approved = [];
   state.rejected = [];
   state.history = [];
 
-  if (state.proposed.length === 0) {
+  if (state.slots.length === 0) {
     $("setupSummary").textContent = "Enter at least one proposed handle to review.";
     return;
   }
@@ -223,7 +313,7 @@ function backToSetup() {
   // Repopulate the textareas from current state so edits don't lose data.
   $("reserved").value = state.reserved.join("\n");
   $("existing").value = state.existing.join("\n");
-  $("proposed").value = state.proposed.join("\n");
+  $("proposed").value = state.slots.map((s) => s.candidates.join(", ")).join("\n");
   show("setup");
 }
 
@@ -275,21 +365,80 @@ function maybePrefillReservedDefaults() {
 
 // --- review phase ------------------------------------------------------------
 
+/** @returns {Slot} */
+function currentSlot() {
+  return state.slots[state.slotIndex];
+}
+
 /** @returns {string} */
 function currentCandidate() {
-  return state.proposed[state.queueIndex];
+  const slot = currentSlot();
+  return slot.candidates[slot.tried];
+}
+
+// setReviewMode switches the review card between checking a candidate
+// (Approve/Reject visible) and the out-of-candidates backup prompt.
+/** @param {"check"|"exhausted"} mode */
+function setReviewMode(mode) {
+  $("approve").classList.toggle("hidden", mode !== "check");
+  $("reject").classList.toggle("hidden", mode !== "check");
+  $("tryAnother").classList.toggle("hidden", mode !== "exhausted");
+}
+
+// renderAttempts shows the current person's already-rejected attempts as
+// struck-through chips, so a backup is reviewed with its predecessors visible.
+/** @param {Slot} slot */
+function renderAttempts(slot) {
+  const box = $("attempts");
+  box.innerHTML = "";
+  box.classList.toggle("hidden", slot.tried === 0);
+  for (const c of slot.candidates.slice(0, slot.tried)) {
+    const chip = document.createElement("span");
+    chip.className = "attempt-chip";
+    chip.textContent = c;
+    box.appendChild(chip);
+  }
+}
+
+// showExhausted renders the backup prompt for a person whose every candidate
+// was rejected: type another handle to check, or skip them.
+/** @param {Slot} slot */
+function showExhausted(slot) {
+  $("progress").textContent =
+    `Person ${state.slotIndex + 1} of ${state.slots.length} · out of candidates`;
+  $("candidate").textContent = "";
+  $("banner").className = "banner med";
+  $("banner").textContent = slot.candidates.length === 1
+    ? "Their only candidate was rejected — try a backup, or skip this person."
+    : `All ${slot.candidates.length} of their candidates were rejected — try a backup, or skip this person.`;
+  $("issues").innerHTML = "";
+  $("backupError").textContent = "";
+  setReviewMode("exhausted");
+  $("undo").disabled = state.history.length === 0;
+  $("backupInput").focus();
 }
 
 /** @returns {Promise<void>} */
 async function showCurrent() {
   updateTallies();
-  if (state.queueIndex >= state.proposed.length) {
+  if (state.slotIndex >= state.slots.length) {
     showSummary();
     return;
   }
+  const slot = currentSlot();
+  renderAttempts(slot);
+  if (slot.tried >= slot.candidates.length) {
+    showExhausted(slot);
+    return;
+  }
   const candidate = currentCandidate();
-  $("progress").textContent = `Reviewing ${state.queueIndex + 1} of ${state.proposed.length}`;
+  const attempt = slot.candidates.length > 1
+    ? ` · candidate ${slot.tried + 1} of ${slot.candidates.length}`
+    : "";
+  $("progress").textContent =
+    `Person ${state.slotIndex + 1} of ${state.slots.length}${attempt}`;
   $("candidate").textContent = candidate;
+  setReviewMode("check");
   $("banner").className = "banner";
   $("banner").textContent = "Checking…";
   $("issues").innerHTML = "";
@@ -393,37 +542,77 @@ function esc(s) {
 }
 
 function approve() {
+  const slot = currentSlot();
   const c = currentCandidate();
+  slot.approved = c;
   if (!hasCI(state.approved, c)) state.approved.push(c);
-  state.history.push({ action: "approve", candidate: c });
-  advance();
-}
-
-function reject() {
-  const c = currentCandidate();
-  if (!hasCI(state.rejected, c)) state.rejected.push(c);
-  state.history.push({ action: "reject", candidate: c });
-  advance();
-}
-
-// undo reverses the most recent decision: it removes the candidate from the
-// approved/rejected lists, steps the queue back to that handle, and re-checks
-// it. Reachable from both the review pane and the summary, so the last decision
-// can always be corrected.
-function undo() {
-  const last = state.history.pop();
-  if (!last) return;
-  removeCI(state.approved, last.candidate);
-  removeCI(state.rejected, last.candidate);
-  if (state.queueIndex > 0) state.queueIndex--;
+  state.history.push({ action: "approve", slot: state.slotIndex, candidate: c });
+  state.slotIndex++;
   save();
-  show("review");
   showCurrent();
 }
 
-function advance() {
-  state.queueIndex++;
+// reject falls through within the same person: the next call to showCurrent
+// presents their next ranked candidate, or the backup prompt when none remain.
+function reject() {
+  const slot = currentSlot();
+  const c = currentCandidate();
+  slot.tried++;
+  if (!hasCI(state.rejected, c)) state.rejected.push(c);
+  state.history.push({ action: "reject", slot: state.slotIndex, candidate: c });
   save();
+  showCurrent();
+}
+
+// skipPerson resolves the current person with no handle after every candidate
+// was rejected. Recorded in history so it can be undone like any decision.
+function skipPerson() {
+  currentSlot().skipped = true;
+  state.history.push({ action: "skip", slot: state.slotIndex, candidate: "" });
+  state.slotIndex++;
+  save();
+  showCurrent();
+}
+
+// tryBackup appends an ad-hoc backup handle to the current (exhausted) person's
+// candidate list and re-enters the normal check flow on it. Deliberately not a
+// history entry: rejecting the backup is the undoable decision, and undoing
+// past that rejection simply re-presents it.
+function tryBackup() {
+  const slot = currentSlot();
+  const h = $("backupInput").value.trim();
+  if (!h) return;
+  if (hasCI(slot.candidates, h)) {
+    $("backupError").textContent = `“${h}” was already tried for this person.`;
+    return;
+  }
+  $("backupInput").value = "";
+  $("backupError").textContent = "";
+  slot.candidates.push(h);
+  save();
+  showCurrent();
+}
+
+// undo reverses the most recent decision: it reverts the slot it happened in,
+// steps the review back there, and re-checks. Reachable from both the review
+// pane and the summary, so the last decision can always be corrected.
+function undo() {
+  const last = state.history.pop();
+  if (!last) return;
+  const slot = state.slots[last.slot];
+  if (last.action === "approve") {
+    removeCI(state.approved, last.candidate);
+    slot.approved = "";
+  } else if (last.action === "reject") {
+    removeCI(state.rejected, last.candidate);
+    slot.tried--;
+    slot.skipped = false; // migrated pre-slot states mark rejected handles skipped too
+  } else { // skip
+    slot.skipped = false;
+  }
+  state.slotIndex = last.slot;
+  save();
+  show("review");
   showCurrent();
 }
 
@@ -434,10 +623,37 @@ function updateTallies() {
 
 // --- summary phase -----------------------------------------------------------
 
+// slotOutcome renders one person's review as a single line: rejected attempts
+// struck out (✗) in order, then the winning handle (✓), "(no handle)" when the
+// person was skipped or left undecided at the backup prompt, or the untried
+// candidates when the review never reached them.
+/**
+ * @param {Slot} slot
+ * @returns {string}
+ */
+function slotOutcome(slot) {
+  const parts = slot.candidates.slice(0, slot.tried).map((c) => c + " ✗");
+  if (slot.approved) {
+    parts.push(slot.approved + " ✓");
+  } else if (slot.skipped || slot.tried >= slot.candidates.length) {
+    parts.push("(no handle)");
+  } else {
+    parts.push(slot.candidates.slice(slot.tried).join(", ") + " (not reviewed)");
+  }
+  return parts.join(" → ");
+}
+
+/** @returns {string} */
+function outcomesText() {
+  return state.slots.map(slotOutcome).join("\n");
+}
+
 function showSummary() {
+  const resolved = state.slots.filter((s) => s.approved).length;
   $("summaryLine").textContent =
-    `${state.approved.length} approved, ${state.rejected.length} rejected, ` +
-    `${state.proposed.length} reviewed.`;
+    `${resolved} of ${state.slots.length} people got an approved handle; ` +
+    `${state.rejected.length} rejected along the way.`;
+  $("outcomeList").value = outcomesText();
   $("approvedList").value = state.approved.join("\n");
   $("rejectedList").value = state.rejected.join("\n");
   $("fullList").value = state.existing.concat(state.approved).join("\n");
@@ -486,7 +702,7 @@ async function reset() {
   // Also clear the one-shot flag so reset returns to a first-visit state,
   // re-prefilling the Reserved defaults below.
   localStorage.removeItem(RESERVED_DEFAULTS_KEY);
-  state = { reserved: [], existing: [], proposed: [], queueIndex: 0, approved: [], rejected: [], history: [] };
+  state = { reserved: [], existing: [], slots: [], slotIndex: 0, approved: [], rejected: [], history: [] };
   $("reserved").value = "";
   $("existing").value = "";
   $("proposed").value = "";
@@ -502,6 +718,11 @@ function init() {
   $("backToSetup").addEventListener("click", backToSetup);
   $("approve").addEventListener("click", approve);
   $("reject").addEventListener("click", reject);
+  $("checkBackup").addEventListener("click", tryBackup);
+  $("backupInput").addEventListener("keydown", (/** @type {KeyboardEvent} */ e) => {
+    if (e.key === "Enter") tryBackup();
+  });
+  $("skipPerson").addEventListener("click", skipPerson);
   $("undo").addEventListener("click", undo);
   $("undoSummary").addEventListener("click", undo);
   $("finish").addEventListener("click", showSummary);
@@ -509,6 +730,8 @@ function init() {
   $("reset").addEventListener("click", reset);
   $("resetSetup").addEventListener("click", reset);
 
+  $("copyOutcomes").addEventListener("click", (/** @type {Event} */ e) => copyText(outcomesText(), /** @type {HTMLElement} */ (e.target)));
+  $("downloadOutcomes").addEventListener("click", () => download("handle-outcomes.txt", outcomesText()));
   $("copyApproved").addEventListener("click", (/** @type {Event} */ e) => copyText(state.approved.join("\n"), /** @type {HTMLElement} */ (e.target)));
   $("copyRejected").addEventListener("click", (/** @type {Event} */ e) => copyText(state.rejected.join("\n"), /** @type {HTMLElement} */ (e.target)));
   $("copyFull").addEventListener("click", (/** @type {Event} */ e) => copyText(state.existing.concat(state.approved).join("\n"), /** @type {HTMLElement} */ (e.target)));
@@ -521,7 +744,7 @@ function init() {
 
   // Resume an in-progress session if one was saved.
   if (load()) {
-    if (state.queueIndex >= state.proposed.length) {
+    if (state.slotIndex >= state.slots.length) {
       showSummary();
     } else {
       show("review");

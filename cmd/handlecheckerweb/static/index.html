@@ -40,8 +40,8 @@
     <h2>Then, propose new handles</h2>
     <div class="field">
       <label for="proposed">New handles to review</label>
-      <p class="hint">Paste the handles you want to vet. They'll be reviewed one at a time.</p>
-      <textarea id="proposed" rows="8" placeholder="Nite&#10;GoldBar&#10;Echo"></textarea>
+      <p class="hint">One line per person: their first-pick handle, then any backups, separated by commas or tabs (pasted CSV or spreadsheet rows work as-is). Handles are reviewed one at a time; when one is rejected, that person's next backup is checked before moving on to the next person. A plain one-per-line list works too.</p>
+      <textarea id="proposed" rows="8" placeholder="Nite, NightOwl, Nocturne&#10;GoldBar&#10;Echo, Echelon"></textarea>
     </div>
     <div class="actions">
       <button id="start" class="primary">Start review →</button>
@@ -60,8 +60,20 @@
       <button id="backToSetup" class="link">← Edit lists</button>
     </div>
 
+    <div id="attempts" class="attempts hidden"></div>
     <div id="banner" class="banner"></div>
     <div id="issues" class="issues"></div>
+
+    <!-- Backup prompt, shown instead of Approve/Reject when the current person
+         has run out of candidates. Driven by showExhausted() in app.js. -->
+    <div id="tryAnother" class="try-another hidden">
+      <div class="actions">
+        <input id="backupInput" type="text" placeholder="Another handle for this person" autocomplete="off">
+        <button id="checkBackup" class="primary">Check it</button>
+        <button id="skipPerson" class="link">Skip this person →</button>
+      </div>
+      <p id="backupError" class="hint"></p>
+    </div>
 
     <div class="actions review-actions">
       <button id="approve" class="approve">✓ Approve</button>
@@ -80,6 +92,15 @@
   <section id="summary" class="card hidden">
     <h2>Review complete</h2>
     <p id="summaryLine" class="muted"></p>
+
+    <div class="field">
+      <label>Per-person outcomes</label>
+      <textarea id="outcomeList" rows="8" readonly></textarea>
+      <div class="actions">
+        <button id="copyOutcomes">Copy</button>
+        <button id="downloadOutcomes">Download .txt</button>
+      </div>
+    </div>
 
     <div class="field">
       <label>Newly approved</label>

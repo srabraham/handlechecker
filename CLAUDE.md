@@ -12,7 +12,11 @@ and prints ranked findings.
 A companion web interface (`cmd/handlecheckerweb`) wraps the same engine in an
 incremental intake workflow: seed reserved handles and existing handles, then
 review proposed handles one at a time against that baseline and approve/reject
-each — approvals join the baseline for subsequent checks.
+each — approvals join the baseline for subsequent checks. Proposals are entered
+one line per *person* with that person's ranked backups after the first pick
+(comma/tab separated, so pasted CSV or spreadsheet rows work); a rejection falls
+through to the same person's next backup — or an inline ad-hoc backup prompt
+once they run out — before the review moves on to the next person.
 
 ## Commands
 

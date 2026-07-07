@@ -109,6 +109,36 @@ button.link:hover { text-decoration: underline; }
 .review-actions { margin: 1.25rem 0; }
 .review-actions button { padding: .6rem 1.4rem; font-size: 1rem; }
 
+/* Struck-through chips of the current person's already-rejected attempts. */
+.attempts { display: flex; flex-wrap: wrap; gap: .35rem; margin: .6rem 0 0; }
+.attempt-chip {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .85rem;
+  color: var(--muted);
+  text-decoration: line-through;
+  background: #0f1115;
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  padding: .1rem .5rem;
+}
+
+/* Inline backup prompt, shown when a person runs out of candidates. */
+.try-another { margin: 1.25rem 0; }
+.try-another input {
+  flex: 1;
+  min-width: 12rem;
+  background: #0f1115;
+  color: var(--text);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: .5rem .7rem;
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .9rem;
+}
+.try-another input:focus { outline: none; border-color: var(--accent); }
+.try-another .hint { margin: .4rem 0 0; }
+
 .banner {
   border-radius: 8px;
   padding: .7rem .9rem;
