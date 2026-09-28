@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/srabraham/handlechecker/internal/phonetic"
+	"go.seanabraham.com/handlechecker/internal/phonetic"
 )
 
 // This file evaluates the pairwise checks against the labeled corpus in

@@ -3,7 +3,7 @@ package checker
 import (
 	"strings"
 
-	"github.com/srabraham/handlechecker/internal/phonetic"
+	"go.seanabraham.com/handlechecker/internal/phonetic"
 )
 
 // digitWords maps each decimal digit to the word an operator would speak for it

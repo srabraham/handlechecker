@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/srabraham/handlechecker/internal/phonetic"
+	"go.seanabraham.com/handlechecker/internal/phonetic"
 )
 
 // soundIssues returns the sound-related findings (kind prefixed "sound").

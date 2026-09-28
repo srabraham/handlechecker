@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/srabraham/handlechecker/internal/phonetic"
+	"go.seanabraham.com/handlechecker/internal/phonetic"
 )
 
 // CheckExplanation is one named check's verdict on a pair, for the CLI explain

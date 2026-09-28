@@ -26,7 +26,7 @@ package checker
 import (
 	"fmt"
 
-	"github.com/srabraham/handlechecker/internal/phonetic"
+	"go.seanabraham.com/handlechecker/internal/phonetic"
 )
 
 // soundSignals are the raw per-pair sound measurements, gathered once and then

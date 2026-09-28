@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/srabraham/handlechecker/internal/phonetic"
+	"go.seanabraham.com/handlechecker/internal/phonetic"
 )
 
 // TestSoundScoreTable is a tuning diagnostic, not an assertion: it logs every

@@ -31,7 +31,7 @@ import (
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 
-	"github.com/srabraham/handlechecker/internal/checker"
+	"go.seanabraham.com/handlechecker/internal/checker"
 )
 
 //go:embed static

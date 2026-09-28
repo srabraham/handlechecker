@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/srabraham/handlechecker/internal/phonetic"
+	"go.seanabraham.com/handlechecker/internal/phonetic"
 )
 
 // Severity ranks how concerning an issue is.

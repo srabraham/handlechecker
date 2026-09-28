@@ -16,7 +16,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/srabraham/handlechecker/internal/checker"
+	"go.seanabraham.com/handlechecker/internal/checker"
 )
 
 func main() {
