@@ -72,7 +72,7 @@ func main() {
 	var handler http.Handler = mux
 	if keys := loadAccessKeys(); len(keys) > 0 {
 		handler = authMiddleware(keys, handler)
-		log.Printf("access control enabled: %d key(s) accepted via ?key=, X-Access-Key, or Basic Auth", len(keys))
+		log.Printf("access control enabled: %d key(s) accepted via ?p=, X-Access-Key, or Basic Auth", len(keys))
 	}
 
 	srv := &http.Server{

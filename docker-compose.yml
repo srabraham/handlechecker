@@ -10,7 +10,7 @@ services:
     image: handlechecker
     environment:
       # Optional shared-key gate. Comma-separated secrets; a visitor must present
-      # one via ?key=SECRET, an X-Access-Key header, or HTTP Basic Auth (the key
+      # one via ?p=SECRET, an X-Access-Key header, or HTTP Basic Auth (the key
       # is the password, username ignored). Leave empty/unset to keep the site
       # open. Set it in .env, NOT here, so secrets stay out of version control.
       - "ACCESS_KEYS=${ACCESS_KEYS:-}"

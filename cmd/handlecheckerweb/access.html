@@ -32,8 +32,8 @@
     <p class="tagline">This handle checker is private. Enter your access key to continue.</p>
     {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
     <form method="get" action="{{.Action}}">
-      <label for="key">Access key</label>
-      <input id="key" name="key" type="text" autocomplete="off"
+      <label for="p">Access key</label>
+      <input id="p" name="p" type="text" autocomplete="off"
              autofocus required placeholder="Enter access key">
       <button type="submit">Continue</button>
     </form>

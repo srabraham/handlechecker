@@ -66,12 +66,15 @@ any rate limiting belongs there too.
 Access control: set the `ACCESS_KEYS` env var (comma-separated secrets) to gate
 the whole site — every request, page and API alike, must present a valid key.
 Unset/empty leaves it open (the local/dev default). A visitor may supply the key
-via `?key=SECRET` (cached afterward in an HttpOnly, Secure `hc_access` cookie and
-scrubbed from the URL on the next navigation), an `X-Access-Key` header, or HTTP
+via `?p=SECRET`, an `X-Access-Key` header, or HTTP
 Basic Auth (the key is the password; username ignored). Keys are compared in
-constant time. An unauthorized **browser navigation** gets a styled in-app
+constant time. A valid `?p=` goes straight into the app and deliberately stays
+in the address bar, so the URL is a bookmarkable/shareable way in; it is also
+cached in an HttpOnly, Secure `hc_access` cookie so the page's subresources and
+API fetches (which don't carry `?p=`) are authorized, and a browser navigation
+authorized only by that cookie is redirected to add `?p=` back. An unauthorized **browser navigation** gets a styled in-app
 "enter access key" page (self-contained, since the real CSS is itself gated)
-whose form submits `?key=`; **API/fetch callers** (and anything under `/api/`)
+whose form submits `?p=`; **API/fetch callers** (and anything under `/api/`)
 get a bare `401` with `WWW-Authenticate: Basic` instead. There are no per-user
 accounts — it's a shared bouncer, not identity. See `auth.go`.
 

@@ -11,13 +11,16 @@ import (
 	"strings"
 )
 
-// accessCookieName is the cookie that caches a valid access key so it drops out
-// of the URL after the first ?key= visit. HttpOnly, so client JS can't read it.
+// accessCookieName is the cookie that caches a valid access key so the page's
+// subresource loads and API fetches (which don't carry ?p=) are authorized, and
+// so a bare-URL visit can be redirected back onto its ?p= form. HttpOnly, so
+// client JS can't read it.
 const accessCookieName = "hc_access"
 
 // accessKeyParam is the query-string parameter a visitor can use to present a
-// key in a shareable link, e.g. https://host/?key=SECRET.
-const accessKeyParam = "key"
+// key in a shareable link, e.g. https://host/?p=SECRET. It is deliberately kept
+// in the address bar so the URL can be bookmarked or shared to let someone in.
+const accessKeyParam = "p"
 
 // loadAccessKeys parses the ACCESS_KEYS environment variable into the set of
 // valid keys: a comma-separated list, with surrounding whitespace trimmed and
@@ -34,11 +37,11 @@ func loadAccessKeys() []string {
 
 // authMiddleware gates every request behind a shared access key. A request is
 // allowed if it presents a key matching any in keys via any of, in order: the
-// ?key= query parameter, the X-Access-Key header, the HTTP Basic Auth password
-// (username ignored), or the hc_access cookie. On a valid ?key=, the key is
-// stored in an HttpOnly cookie and — for top-level GET navigations — the visitor
-// is redirected to the same URL with the key stripped, so it doesn't linger in
-// the address bar, history, or Referer headers.
+// ?p= query parameter, the X-Access-Key header, the HTTP Basic Auth password
+// (username ignored), or the hc_access cookie. On a valid ?p=, the key is also
+// stored in an HttpOnly cookie for the page's subresources and API calls. A
+// browser navigation authorized only by the cookie is redirected to the same
+// URL with ?p= added, so the address bar always shows a shareable link.
 //
 // When keys is empty, authentication is disabled and the handler is returned
 // unwrapped (preserving the open local/dev behavior).
@@ -63,8 +66,6 @@ func authMiddleware(keys []string, next http.Handler) http.Handler {
 
 		if ok {
 			if src == keyQuery {
-				// Persist the key so subsequent requests need not carry it, and
-				// scrub it from the URL on plain navigations.
 				http.SetCookie(w, &http.Cookie{
 					Name:     accessCookieName,
 					Value:    presented,
@@ -75,14 +76,13 @@ func authMiddleware(keys []string, next http.Handler) http.Handler {
 					Secure:   true,
 					SameSite: http.SameSiteLaxMode,
 				})
-				if r.Method == http.MethodGet {
-					q := r.URL.Query()
-					q.Del(accessKeyParam)
-					clean := *r.URL
-					clean.RawQuery = q.Encode()
-					http.Redirect(w, r, clean.RequestURI(), http.StatusSeeOther)
-					return
-				}
+			} else if src == keyCookie && wantsHTML(r) {
+				q := r.URL.Query()
+				q.Set(accessKeyParam, presented)
+				withKey := *r.URL
+				withKey.RawQuery = q.Encode()
+				http.Redirect(w, r, withKey.RequestURI(), http.StatusSeeOther)
+				return
 			}
 			next.ServeHTTP(w, r)
 			return
@@ -111,7 +111,7 @@ type keySource int
 
 const (
 	keyNone   keySource = iota // no key presented
-	keyQuery                   // ?key= query parameter
+	keyQuery                   // ?p= query parameter
 	keyHeader                  // X-Access-Key header
 	keyBasic                   // HTTP Basic Auth password
 	keyCookie                  // hc_access session cookie (already logged in)
@@ -182,9 +182,9 @@ func wantsHTML(r *http.Request) bool {
 // accessPageHTML is the standalone "enter access key" page, embedded from
 // access.html. It must be fully self-contained — the real stylesheet lives
 // behind this very gate — so the palette is inlined there to match
-// static/style.css. The form does a plain GET, so submitting sets ?key=… and
-// re-enters authMiddleware, which on a valid key stores the cookie and redirects
-// on through. Action is the current path so the visitor lands where they were
+// static/style.css. The form does a plain GET, so submitting sets ?p=… and
+// re-enters authMiddleware, which on a valid key stores the cookie and serves
+// the app. Action is the current path so the visitor lands where they were
 // headed.
 //
 //go:embed access.html

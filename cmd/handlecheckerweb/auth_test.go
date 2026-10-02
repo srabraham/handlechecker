@@ -74,7 +74,7 @@ func TestLoginLogOmitsKeyAndQuery(t *testing.T) {
 	const secret = "s3cr3t-key"
 	h := authMiddleware([]string{secret}, okHandler)
 	out := captureLog(func() {
-		r := httptest.NewRequest(http.MethodGet, "/?key="+secret, nil)
+		r := httptest.NewRequest(http.MethodGet, "/?p="+secret, nil)
 		h.ServeHTTP(httptest.NewRecorder(), r)
 	})
 	if !strings.Contains(out, "login attempt granted") {
@@ -111,7 +111,7 @@ func TestAuthMiddlewareBlocksAndAccepts(t *testing.T) {
 	}{
 		{"no credentials", func(*http.Request) {}, http.StatusUnauthorized},
 		{"wrong key", func(r *http.Request) {
-			r.URL.RawQuery = "key=nope"
+			r.URL.RawQuery = "p=nope"
 		}, http.StatusUnauthorized},
 		{"valid header", func(r *http.Request) {
 			r.Header.Set("X-Access-Key", "bravo")
@@ -136,17 +136,15 @@ func TestAuthMiddlewareBlocksAndAccepts(t *testing.T) {
 	}
 }
 
-func TestAuthMiddlewareQueryKeySetsCookieAndRedirects(t *testing.T) {
+func TestAuthMiddlewareQueryKeySetsCookieAndStaysInURL(t *testing.T) {
 	h := authMiddleware([]string{"alpha"}, okHandler)
+	r := httptest.NewRequest(http.MethodGet, "/?p=alpha&foo=bar", nil)
+	r.Header.Set("Accept", "text/html")
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/?key=alpha&foo=bar", nil))
+	h.ServeHTTP(rec, r)
 
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("a valid ?key= GET should redirect, got %d", rec.Code)
-	}
-	loc := rec.Header().Get("Location")
-	if loc != "/?foo=bar" {
-		t.Fatalf("redirect should strip key and keep other params, got %q", loc)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("a valid ?p= GET should go straight into the app, got %d", rec.Code)
 	}
 	var found bool
 	for _, c := range rec.Result().Cookies() {
@@ -158,7 +156,38 @@ func TestAuthMiddlewareQueryKeySetsCookieAndRedirects(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatal("a valid ?key= should set the access cookie")
+		t.Fatal("a valid ?p= should set the access cookie")
+	}
+}
+
+func TestAuthMiddlewareCookieNavigationRedirectsToShareableURL(t *testing.T) {
+	h := authMiddleware([]string{"alpha"}, okHandler)
+	r := httptest.NewRequest(http.MethodGet, "/?foo=bar", nil)
+	r.Header.Set("Accept", "text/html")
+	r.AddCookie(&http.Cookie{Name: accessCookieName, Value: "alpha"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("a cookie-only page view should redirect to add ?p=, got %d", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != "/?foo=bar&p=alpha" {
+		t.Fatalf("redirect should add p and keep other params, got %q", loc)
+	}
+}
+
+func TestAuthMiddlewareCookieSubresourceDoesNotRedirect(t *testing.T) {
+	// Stylesheet/script loads and fetches don't ask for HTML; they ride the
+	// cookie without being bounced.
+	h := authMiddleware([]string{"alpha"}, okHandler)
+	r := httptest.NewRequest(http.MethodGet, "/app.js", nil)
+	r.Header.Set("Accept", "*/*")
+	r.AddCookie(&http.Cookie{Name: accessCookieName, Value: "alpha"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("a cookie-authorized subresource should pass through, got %d", rec.Code)
 	}
 }
 
@@ -180,7 +209,7 @@ func TestAuthMiddlewareServesAccessPageToBrowsers(t *testing.T) {
 		t.Fatal("the HTML page must not set WWW-Authenticate, else browsers show the native dialog")
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "Access required") || !strings.Contains(body, `name="key"`) {
+	if !strings.Contains(body, "Access required") || !strings.Contains(body, `name="p"`) {
 		t.Fatalf("page missing heading or key field:\n%s", body)
 	}
 	if strings.Contains(body, "wasn’t recognized") {
@@ -190,7 +219,7 @@ func TestAuthMiddlewareServesAccessPageToBrowsers(t *testing.T) {
 
 func TestAuthMiddlewareAccessPageShowsErrorOnWrongKey(t *testing.T) {
 	h := authMiddleware([]string{"alpha"}, okHandler)
-	r := httptest.NewRequest(http.MethodGet, "/?key=wrong", nil)
+	r := httptest.NewRequest(http.MethodGet, "/?p=wrong", nil)
 	r.Header.Set("Accept", "text/html")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, r)
@@ -222,8 +251,8 @@ func TestAuthMiddlewareQueryKeyOnPostDoesNotRedirect(t *testing.T) {
 	// it just shouldn't turn into a 303.
 	h := authMiddleware([]string{"alpha"}, okHandler)
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/check?key=alpha", nil))
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/check?p=alpha", nil))
 	if rec.Code != http.StatusOK {
-		t.Fatalf("valid ?key= POST should pass through, got %d", rec.Code)
+		t.Fatalf("valid ?p= POST should pass through, got %d", rec.Code)
 	}
 }
