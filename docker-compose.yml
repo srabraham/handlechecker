@@ -1,12 +1,8 @@
-# Run the handle-checker web app publicly with auto-provisioned Let's Encrypt
-# TLS. The server speaks ACME itself (no certbot) and auto-renews.
+# Run the handle-checker web app. It serves plain HTTP; TLS is terminated by a
+# reverse proxy / load balancer in front of it.
 #
-#   1. Point your domain's DNS (A/AAAA) at this host.
-#   2. Copy .env.example to .env and set TLS_DOMAIN (and ideally TLS_EMAIL).
-#   3. docker compose up -d --build
-#
-# Certificates are cached in ./certs on the host so they survive restarts and
-# re-deploys — important, because Let's Encrypt enforces issuance rate limits.
+#   1. Copy .env.example to .env and set ACCESS_KEYS if you want the site gated.
+#   2. docker compose up -d --build
 
 services:
   web:
@@ -15,12 +11,7 @@ services:
     # The image defaults to the CLI; override to run the web server.
     entrypoint: ["handlecheckerweb"]
     command:
-      - "--tls-domain=${TLS_DOMAIN:?set TLS_DOMAIN in .env, e.g. handles.example.org}"
-      - "--tls-email=${TLS_EMAIL:-}"
-      - "--tls-cache=/certs"
-      # Flip to true while testing to use the Let's Encrypt staging CA (untrusted
-      # certs, but far higher rate limits) so you don't burn the real quota.
-      - "--tls-staging=${TLS_STAGING:-false}"
+      - "--addr=:8080"
     environment:
       # Optional shared-key gate. Comma-separated secrets; a visitor must present
       # one via ?key=SECRET, an X-Access-Key header, or HTTP Basic Auth (the key
@@ -28,9 +19,5 @@ services:
       # open. Set it in .env, NOT here, so secrets stay out of version control.
       - "ACCESS_KEYS=${ACCESS_KEYS:-}"
     ports:
-      - "${HOST_TLS_PORT:-443}:443" # HTTPS
-      - "${HOST_HTTP_PORT:-80}:80"   # ACME HTTP-01 challenge + HTTP→HTTPS redirect (needed for issuance/renewal)
-    volumes:
-      # Persist the TLS cache (certificates + ACME account key) on the host.
-      - ./certs:/certs
+      - "${HOST_PORT:-8080}:8080"
     restart: unless-stopped

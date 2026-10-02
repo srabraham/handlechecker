@@ -3,6 +3,5 @@ Dockerfile
 .dockerignore
 README.md
 TODO.md
-certs/
 .env
 docker-compose.yml

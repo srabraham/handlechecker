@@ -51,15 +51,7 @@ docker run --rm handlechecker GoldWing Knight Nite
 # Override the entrypoint to switch from the default CLI to the web server.
 docker run --rm --entrypoint handlecheckerweb -p 8080:8080 handlechecker
 
-# Serve the web interface publicly with auto-provisioned Let's Encrypt TLS.
-# The host must be internet-reachable on ports 80+443 and DNS for the domain
-# must point at it. Persist -tls-cache so certs survive restarts (rate limits!).
-docker run --rm --entrypoint handlecheckerweb -p 80:80 -p 443:443 \
-  -v handlechecker-certs:/certs handlechecker \
-  --tls-domain handles.example.org --tls-email you@example.org --tls-cache /certs
-
-# Or via docker-compose: set TLS_DOMAIN/TLS_EMAIL in .env (see .env.example),
-# then bring it up. Maps ./certs on the host as the TLS cache; exposes 80+443.
+# Or via docker-compose (set ACCESS_KEYS in .env to gate the site; see .env.example).
 cp .env.example .env && $EDITOR .env
 docker compose up -d --build
 ```
@@ -67,31 +59,21 @@ docker compose up -d --build
 Running in Docker (rather than `go run`) is also how you get the espeak-ng
 phoneme engine, which the local PATH usually lacks — see the engine notes below.
 
-Web server flags: `--addr` (plain-HTTP listen address, default `:8080`, used when
-`--tls-domain` is empty). For public HTTPS the server speaks ACME itself (via
-`golang.org/x/crypto/acme/autocert`) — no certbot: `--tls-domain` (comma-separated
-domains; setting it enables HTTPS), `--tls-email`, `--tls-cache` (cert/account
-cache dir, default `certs` — **persist this** so renewals and restarts don't
-re-hit Let's Encrypt rate limits), `--https-addr` (default `:443`), `--http-addr`
-(default `:80`, serves the ACME HTTP-01 challenge and redirects to HTTPS), and
-`--tls-staging` (use the Let's Encrypt staging CA while testing). Certificates
-renew automatically in the background.
+Web server flags: `--addr` (HTTP listen address, default `:8080`). The server
+speaks plain HTTP only; TLS is terminated by whatever sits in front of it, and
+any rate limiting belongs there too.
 
 Access control: set the `ACCESS_KEYS` env var (comma-separated secrets) to gate
 the whole site — every request, page and API alike, must present a valid key.
 Unset/empty leaves it open (the local/dev default). A visitor may supply the key
-via `?key=SECRET` (cached afterward in an HttpOnly `hc_access` cookie and
+via `?key=SECRET` (cached afterward in an HttpOnly, Secure `hc_access` cookie and
 scrubbed from the URL on the next navigation), an `X-Access-Key` header, or HTTP
 Basic Auth (the key is the password; username ignored). Keys are compared in
 constant time. An unauthorized **browser navigation** gets a styled in-app
 "enter access key" page (self-contained, since the real CSS is itself gated)
 whose form submits `?key=`; **API/fetch callers** (and anything under `/api/`)
 get a bare `401` with `WWW-Authenticate: Basic` instead. There are no per-user
-accounts — it's a shared bouncer, not identity. Wrong guesses are throttled
-per client IP (a token bucket reusing `ratelimit.go`: a short burst, then
-~1 guess per few seconds, `429` + `Retry-After` once spent); a **correct** key
-never touches the limiter, and a bare page view (no key presented) costs no
-budget, so only actual guesses are rate-limited. See `auth.go`.
+accounts — it's a shared bouncer, not identity. See `auth.go`.
 
 CLI flags: `--min` (minimum severity to print, default `info`), `--fail-on`
 (exit non-zero at this severity or above, default `high`, `never` to always exit

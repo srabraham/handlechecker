@@ -19,19 +19,6 @@ const accessCookieName = "hc_access"
 // key in a shareable link, e.g. https://host/?key=SECRET.
 const accessKeyParam = "key"
 
-// Failed-guess throttle: each wrong key from a client IP spends one token from a
-// bucket of authFailBurst, refilling at authFailRate per second. So an IP gets a
-// short burst of attempts, then is limited to roughly one guess per
-// 1/authFailRate seconds — enough to blunt brute-forcing of the shared key
-// without locking out a fumbling legitimate user for long. Correct keys never
-// touch the bucket. authRetryAfterSeconds is the Retry-After hint sent when
-// throttled (≈ the refill interval).
-const (
-	authFailRate          = 0.2 // 1 token per 5s
-	authFailBurst         = 5
-	authRetryAfterSeconds = "5"
-)
-
 // loadAccessKeys parses the ACCESS_KEYS environment variable into the set of
 // valid keys: a comma-separated list, with surrounding whitespace trimmed and
 // empty entries dropped. An empty result means authentication is disabled.
@@ -55,13 +42,7 @@ func loadAccessKeys() []string {
 //
 // When keys is empty, authentication is disabled and the handler is returned
 // unwrapped (preserving the open local/dev behavior).
-//
-// fails, if non-nil, throttles wrong guesses per client IP: each rejected key
-// spends a token, and once an IP's budget is spent further guesses get 429 until
-// it refills. A correct key never touches the limiter (a legit user who finally
-// types it right is never locked out), and a bare visit with no key presented
-// costs nothing (loading the page is not a guess).
-func authMiddleware(keys []string, fails *rateLimiter, next http.Handler) http.Handler {
+func authMiddleware(keys []string, next http.Handler) http.Handler {
 	if len(keys) == 0 {
 		return next
 	}
@@ -89,7 +70,9 @@ func authMiddleware(keys []string, fails *rateLimiter, next http.Handler) http.H
 					Value:    presented,
 					Path:     "/",
 					HttpOnly: true,
-					Secure:   r.TLS != nil,
+					// Always Secure: TLS is terminated upstream, so r.TLS is nil
+					// even though the browser is on HTTPS.
+					Secure:   true,
 					SameSite: http.SameSiteLaxMode,
 				})
 				if r.Method == http.MethodGet {
@@ -105,15 +88,6 @@ func authMiddleware(keys []string, fails *rateLimiter, next http.Handler) http.H
 			return
 		}
 
-		// Unauthorized. Count an actual wrong guess (a presented-but-invalid key)
-		// against this IP's failure budget; once spent, reject further guesses
-		// cheaply with 429. A request with no key presented is just a page view,
-		// so it neither spends budget nor counts as throttled.
-		if presented != "" && fails != nil && !fails.allow(clientIP(r)) {
-			writeThrottled(w, r)
-			return
-		}
-
 		if wantsHTML(r) {
 			// Browser navigation: show the friendly access-key page instead of
 			// the gray native Basic Auth dialog. A non-empty presented key means
@@ -122,7 +96,7 @@ func authMiddleware(keys []string, fails *rateLimiter, next http.Handler) http.H
 			if presented != "" {
 				msg = "That access key wasn’t recognized. Try again."
 			}
-			writeAccessPage(w, r, http.StatusUnauthorized, msg, false)
+			writeAccessPage(w, r, msg)
 			return
 		}
 		// API / scripted clients: a plain 401, advertising that Basic Auth (key
@@ -218,37 +192,19 @@ var accessPageHTML string
 
 var accessPageTemplate = template.Must(template.New("access").Parse(accessPageHTML))
 
-// writeAccessPage renders the access-key page with the given status (401 for a
-// normal prompt/rejection, 429 when throttled — the body renders either way).
-// errMsg, when non-empty, is shown above the form; disabled greys out the form
-// (used while throttled, so the visitor waits rather than burning guesses). No
-// WWW-Authenticate header is set here, so browsers show this page rather than
-// their native credential dialog.
-func writeAccessPage(w http.ResponseWriter, r *http.Request, status int, errMsg string, disabled bool) {
+// writeAccessPage renders the access-key page with a 401. errMsg, when
+// non-empty, is shown above the form. No WWW-Authenticate header is set here, so
+// browsers show this page rather than their native credential dialog.
+func writeAccessPage(w http.ResponseWriter, r *http.Request, errMsg string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(status)
+	w.WriteHeader(http.StatusUnauthorized)
 	// Action is r.URL.Path (always starts with "/"); html/template applies its
 	// attribute/URL escaping, so a plain string is both safe and correct here.
 	_ = accessPageTemplate.Execute(w, struct {
-		Action   string
-		Error    string
-		Disabled bool
+		Action string
+		Error  string
 	}{
-		Action:   r.URL.Path,
-		Error:    errMsg,
-		Disabled: disabled,
+		Action: r.URL.Path,
+		Error:  errMsg,
 	})
-}
-
-// writeThrottled responds to a wrong guess from an IP that has exhausted its
-// failure budget: a friendly 429 page for browsers, a bare 429 for programmatic
-// callers. Either way it advertises Retry-After so clients know to back off.
-func writeThrottled(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Retry-After", authRetryAfterSeconds)
-	if wantsHTML(r) {
-		writeAccessPage(w, r, http.StatusTooManyRequests,
-			"Too many attempts. Please wait a few seconds and try again.", true)
-		return
-	}
-	http.Error(w, "too many failed attempts; slow down", http.StatusTooManyRequests)
 }
