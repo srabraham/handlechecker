@@ -8,10 +8,6 @@ services:
   web:
     build: .
     image: handlechecker
-    # The image defaults to the CLI; override to run the web server.
-    entrypoint: ["handlecheckerweb"]
-    command:
-      - "--addr=:8080"
     environment:
       # Optional shared-key gate. Comma-separated secrets; a visitor must present
       # one via ?key=SECRET, an X-Access-Key header, or HTTP Basic Auth (the key
